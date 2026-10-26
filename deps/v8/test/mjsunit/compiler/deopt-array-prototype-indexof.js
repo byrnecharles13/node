@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --opt
+// Flags: --allow-natives-syntax --turbofan
 
 /* Test deopt behaviors when the prototype has elements */
 
@@ -86,6 +86,49 @@
   // deopt because of map change
   iarr.__proto__ = [2];
   assertEquals(0, indexOf(iarr, 2));
+})();
+
+(function TestIndexOfFromIndexTruncation() {
+  function indexof_in_range_neg(arr, val) { return arr.indexOf(val, -3); }
+  function indexof_in_range_pos(arr, val) { return arr.indexOf(val, 3); }
+
+  function indexof_extreme_neg(arr, val) { return arr.indexOf(val, -2147483649); }
+
+  function indexof_extreme_pos(arr, val) { return arr.indexOf(val, 2147483648); }
+  function indexof_extreme_huge(arr, val) { return arr.indexOf(val, 1e15); }
+
+  const test_fns = [
+    indexof_in_range_neg,
+    indexof_in_range_pos,
+    indexof_extreme_neg,
+    indexof_extreme_pos,
+    indexof_extreme_huge,
+  ];
+
+  for (let f of test_fns) %PrepareFunctionForOptimization(f);
+
+  assertEquals(0, indexof_in_range_neg([1, 2, 3], 1));
+  assertEquals(-1, indexof_in_range_pos([1, 2, 3], 1));
+
+  assertEquals(0, indexof_extreme_neg([1, 2, 3], 1));
+  assertEquals(-1, indexof_extreme_pos([1, 2, 3], 1));
+  assertEquals(-1, indexof_extreme_huge([1, 2, 3], 1));
+
+  for (let f of test_fns) %OptimizeFunctionOnNextCall(f);
+
+  assertEquals(0, indexof_in_range_neg([1, 2, 3], 1));
+  assertEquals(-1, indexof_in_range_pos([1, 2, 3], 1));
+
+  assertEquals(0, indexof_extreme_neg([1, 2, 3], 1));
+  assertEquals(-1, indexof_extreme_pos([1, 2, 3], 1));
+  assertEquals(-1, indexof_extreme_huge([1, 2, 3], 1));
+
+  assertTrue(isOptimized(indexof_in_range_neg));
+  assertTrue(isOptimized(indexof_in_range_pos));
+
+  assertFalse(isOptimized(indexof_extreme_neg));
+  assertFalse(isOptimized(indexof_extreme_pos));
+  assertFalse(isOptimized(indexof_extreme_huge));
 })();
 
 // This pollutes the Array prototype, so we should not run more tests

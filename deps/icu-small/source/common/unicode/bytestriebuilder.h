@@ -129,8 +129,8 @@ public:
 private:
     friend class ::BytesTrieTest;
 
-    BytesTrieBuilder(const BytesTrieBuilder &other);  // no copy constructor
-    BytesTrieBuilder &operator=(const BytesTrieBuilder &other);  // no assignment operator
+    BytesTrieBuilder(const BytesTrieBuilder &other) = delete;  // no copy constructor
+    BytesTrieBuilder &operator=(const BytesTrieBuilder &other) = delete;  // no assignment operator
 
     void buildBytes(UStringTrieBuildOption buildOption, UErrorCode &errorCode);
 
@@ -150,9 +150,6 @@ private:
     virtual int32_t getMinLinearMatch() const override { return BytesTrie::kMinLinearMatch; }
     virtual int32_t getMaxLinearMatchLength() const override { return BytesTrie::kMaxLinearMatchLength; }
 
-    /**
-     * @internal (private)
-     */
     class BTLinearMatchNode : public LinearMatchNode {
     public:
         BTLinearMatchNode(const char *units, int32_t len, Node *nextNode);

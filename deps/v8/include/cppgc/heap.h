@@ -15,12 +15,17 @@
 #include "cppgc/platform.h"
 #include "v8config.h"  // NOLINT(build/include_directory)
 
+#if V8_CC_MSVC
+#include <intrin.h>  // _AddressOfReturnAddress()
+#endif
+
 /**
  * cppgc - A C++ garbage collection library.
  */
 namespace cppgc {
 
 class AllocationHandle;
+class HeapHandle;
 
 /**
  * Implementation details of cppgc. Those details are considered internal and
@@ -32,9 +37,20 @@ class Heap;
 }  // namespace internal
 
 /**
- * Used for additional heap APIs.
+ * A marker that captures the current stack start address.
  */
-class HeapHandle;
+class V8_EXPORT StackStartMarker {
+ public:
+#if V8_CC_MSVC
+  StackStartMarker() : stack_start_(_AddressOfReturnAddress()) {}
+#else
+  StackStartMarker() : stack_start_(__builtin_frame_address(0)) {}
+#endif
+  void* stack_start() const { return stack_start_; }
+
+ private:
+  void* stack_start_;
+};
 
 class V8_EXPORT Heap {
  public:
@@ -59,7 +75,7 @@ class V8_EXPORT Heap {
   };
 
   /**
-   * Specifies supported marking types
+   * Specifies supported marking types.
    */
   enum class MarkingType : uint8_t {
     /**
@@ -79,7 +95,7 @@ class V8_EXPORT Heap {
   };
 
   /**
-   * Specifies supported sweeping types
+   * Specifies supported sweeping types.
    */
   enum class SweepingType : uint8_t {
     /**
@@ -155,8 +171,13 @@ class V8_EXPORT Heap {
      * GC scheduler follows.
      */
     ResourceConstraints resource_constraints;
-  };
 
+    /**
+     * Optional marker representing the stack start of the thread creating the
+     * heap.
+     */
+    std::optional<StackStartMarker> stack_start_marker = std::nullopt;
+  };
   /**
    * Creates a new heap that can be used for object allocation.
    *

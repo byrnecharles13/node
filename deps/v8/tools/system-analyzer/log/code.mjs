@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 import {formatBytes} from '../helper.mjs';
+
 import {LogEntry} from './log.mjs';
 
 class CodeString {
@@ -22,18 +23,48 @@ class CodeString {
 }
 
 export class DeoptLogEntry extends LogEntry {
+  static get typeName() {
+    return 'deopt';
+  }
+
   constructor(
       type, time, entry, deoptReason, deoptLocation, scriptOffset,
       instructionStart, codeSize, inliningId) {
     super(type, time);
+    /** @type {CodeEntry} */
     this._entry = entry;
+    /** @type {string} */
     this._reason = deoptReason;
+    /** @type {SourcePosition} */
     this._location = deoptLocation;
+    /** @type {number} */
     this._scriptOffset = scriptOffset;
+    /** @type {number} */
     this._instructionStart = instructionStart;
+    /** @type {number} */
     this._codeSize = codeSize;
+    /** @type {string} */
     this._inliningId = inliningId;
     this.fileSourcePosition = undefined;
+  }
+
+  toDetailJSON() {
+    let loc = this.location;
+    if (typeof loc === 'string' && loc.startsWith('<') && loc.endsWith('>')) {
+      loc = loc.substring(1, loc.length - 1);
+    }
+
+    const res = {
+      ...super.toDetailJSON(),
+      reason: this.reason,
+      location: loc,
+      scriptOffset: this.scriptOffset,
+      instructionStart: this.instructionStart,
+      codeSize: this.codeSize,
+      inliningId: this.inliningId
+    };
+
+    return res;
   }
 
   get reason() {
@@ -42,6 +73,22 @@ export class DeoptLogEntry extends LogEntry {
 
   get location() {
     return this._location;
+  }
+
+  get scriptOffset() {
+    return this._scriptOffset;
+  }
+
+  get instructionStart() {
+    return this._instructionStart;
+  }
+
+  get codeSize() {
+    return this._codeSize;
+  }
+
+  get inliningId() {
+    return this._inliningId;
   }
 
   get entry() {
@@ -67,8 +114,10 @@ export class DeoptLogEntry extends LogEntry {
 class CodeLikeLogEntry extends LogEntry {
   constructor(type, time, profilerEntry) {
     super(type, time);
+    /** @type {CodeEntry} */
     this._entry = profilerEntry;
     profilerEntry.logEntry = this;
+    /** @type {LogEntry[]} */
     this._relatedEntries = [];
   }
 
@@ -86,11 +135,40 @@ class CodeLikeLogEntry extends LogEntry {
 }
 
 export class CodeLogEntry extends CodeLikeLogEntry {
-  constructor(type, time, kindName, kind, profilerEntry) {
+  static get typeName() {
+    return 'code';
+  }
+
+  constructor(type, time, kindName, kind, name, profilerEntry) {
     super(type, time, profilerEntry);
     this._kind = kind;
+    /** @type {string} */
     this._kindName = kindName;
+    /** @type {?FeedbackVectorEntry} */
     this._feedbackVector = undefined;
+    /** @type {string} */
+    this._name = name;
+  }
+
+  toDetailJSON() {
+    const source = this.entry?.getSourceCode();
+    const related = this.relatedEntries();
+
+    return {
+      ...super.toDetailJSON(),
+      name: this.name,
+      kindName: this.kindName,
+      size: this.size,
+      sourceLines: source?.split('\n') ?? [],
+      code: this.code ?? '',
+      related: related?.map(entry => entry.toString()) ?? [],
+      invocationCount: this.feedbackVector?.invocationCount ?? 0,
+      profilerTicks: this.feedbackVector?.profilerTicks ?? 0
+    };
+  }
+
+  get name() {
+    return this._name;
   }
 
   get kind() {
@@ -105,12 +183,24 @@ export class CodeLogEntry extends CodeLikeLogEntry {
     return this._kindName === 'Unopt';
   }
 
+  get isScript() {
+    return this._type.startsWith('Script');
+  }
+
   get kindName() {
     return this._kindName;
   }
 
   get functionName() {
     return this._entry.functionName ?? this._entry.getRawName();
+  }
+
+  get shortName() {
+    if (this.isScript) {
+      let url = this.sourcePosition?.script?.name ?? '';
+      return url.substring(url.lastIndexOf('/') + 1);
+    }
+    return this.functionName;
   }
 
   get size() {
@@ -126,7 +216,7 @@ export class CodeLogEntry extends CodeLikeLogEntry {
   }
 
   get variants() {
-    const entries = Array.from(this.entry?.func?.codeEntries ?? []);
+    const entries = Array.from(this.entry?.sfi?.codeEntries ?? []);
     return entries.map(each => each.logEntry);
   }
 
@@ -149,7 +239,7 @@ export class CodeLogEntry extends CodeLikeLogEntry {
     const dict = super.toolTipDict;
     dict.size = formatBytes(dict.size);
     dict.source = new CodeString(dict.source);
-    dict.code = new CodeString(dict.code);
+    if (dict.code) dict.code = new CodeString(dict.code);
     return dict;
   }
 
@@ -215,13 +305,18 @@ export class FeedbackVectorEntry extends LogEntry {
   }
 }
 
-export class SharedLibLogEntry extends CodeLikeLogEntry {
-  constructor(profilerEntry) {
-    super('SHARED_LIB', 0, profilerEntry);
+export class BaseCPPLogEntry extends CodeLikeLogEntry {
+  constructor(prefix, profilerEntry) {
+    super(prefix, 0, profilerEntry);
   }
 
   get name() {
     return this._entry.name;
+  }
+
+  get shortName() {
+    let name = this.name;
+    return name.substring(name.lastIndexOf('/') + 1);
   }
 
   toString() {
@@ -230,5 +325,17 @@ export class SharedLibLogEntry extends CodeLikeLogEntry {
 
   static get propertyNames() {
     return ['name'];
+  }
+}
+
+export class CPPCodeLogEntry extends BaseCPPLogEntry {
+  constructor(profilerEntry) {
+    super('CPP', profilerEntry);
+  }
+}
+
+export class SharedLibLogEntry extends BaseCPPLogEntry {
+  constructor(profilerEntry) {
+    super('SHARED_LIB', profilerEntry);
   }
 }

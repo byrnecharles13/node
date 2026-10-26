@@ -13,14 +13,19 @@ namespace internal {
 
 using RegList = RegListBase<Register>;
 using DoubleRegList = RegListBase<DoubleRegister>;
+using Simd128RegList = RegListBase<Simd128Register>;
 ASSERT_TRIVIALLY_COPYABLE(RegList);
 ASSERT_TRIVIALLY_COPYABLE(DoubleRegList);
+ASSERT_TRIVIALLY_COPYABLE(Simd128RegList);
 
 // Caller-saved registers
 constexpr RegList kJSCallerSaved = {
     eax, ecx, edx,
     ebx,   // used as caller-saved register in JavaScript code
     edi};  // callee function
+
+// Caller-saved registers according to the x86 ABI
+constexpr RegList kCallerSaved = {eax, ecx, edx};
 
 constexpr int kNumJSCallerSaved = 5;
 

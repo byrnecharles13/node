@@ -11,6 +11,23 @@ namespace compiler {
 
 bool InstructionScheduler::SchedulerSupported() { return true; }
 
+ResourceAllocation InstructionScheduler::GetResourceTable() {
+  std::array units = std::to_array<ResourceAllocation::TableEntry>({
+      {ArchInstResource::kFetch, 1},
+      {ArchInstResource::kIntSingle, 1},
+      {ArchInstResource::kIntMulti, 1},
+      {ArchInstResource::kFP, 1},
+      {ArchInstResource::kLoad, 1},
+      {ArchInstResource::kStore, 1},
+  });
+  return ResourceAllocation(units);
+}
+
+ArchInstResource InstructionScheduler::GetInstructionResource(
+    const Instruction* instr) {
+  return ArchInstResource::kIntSingle;
+}
+
 int InstructionScheduler::GetTargetInstructionFlags(
     const Instruction* instr) const {
   switch (instr->arch_opcode()) {
@@ -44,9 +61,13 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kMips64CvtSUw:
     case kMips64CvtSW:
     case kMips64DMulHigh:
+    case kMips64DMulHighU:
+    case kMips64DMulOvf:
     case kMips64MulHighU:
     case kMips64Dadd:
     case kMips64DaddOvf:
+    case kMips64Add64_3:
+    case kMips64Add128:
     case kMips64Dclz:
     case kMips64Dctz:
     case kMips64Ddiv:
@@ -61,6 +82,8 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kMips64Dmod:
     case kMips64DmodU:
     case kMips64Dmul:
+    case kMips64DmulWide:
+    case kMips64DmuluWide:
     case kMips64Dpopcnt:
     case kMips64Dror:
     case kMips64Dsar:
@@ -68,6 +91,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kMips64Dshr:
     case kMips64Dsub:
     case kMips64DsubOvf:
+    case kMips64Sub128:
     case kMips64Ext:
     case kMips64F64x2Abs:
     case kMips64F64x2Neg:
@@ -127,8 +151,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kMips64F32x4Ne:
     case kMips64F32x4Neg:
     case kMips64F32x4Sqrt:
-    case kMips64F32x4RecipApprox:
-    case kMips64F32x4RecipSqrtApprox:
     case kMips64F32x4ReplaceLane:
     case kMips64F32x4SConvertI32x4:
     case kMips64F32x4Splat:
@@ -775,7 +797,7 @@ int PrepareForTailCallLatency() {
 int AssertLatency() { return 1; }
 
 int PrepareCallCFunctionLatency() {
-  int frame_alignment = TurboAssembler::ActivationFrameAlignment();
+  int frame_alignment = MacroAssembler::ActivationFrameAlignment();
   if (frame_alignment > kSystemPointerSize) {
     return 1 + DsubuLatency(false) + AndLatency(false) + 1;
   } else {
@@ -1276,7 +1298,7 @@ int InstructionScheduler::GetInstructionLatency(const Instruction* instr) {
       return JumpLatency();
     case kArchCallJSFunction: {
       int latency = 0;
-      if (FLAG_debug_code) {
+      if (v8_flags.debug_code) {
         latency = 1 + AssertLatency();
       }
       return latency + 1 + DadduLatency(false) + CallLatency();
@@ -1307,7 +1329,6 @@ int InstructionScheduler::GetInstructionLatency(const Instruction* instr) {
       return 1;
     case kArchComment:
     case kArchNop:
-    case kArchThrowTerminator:
     case kArchDeoptimize:
       return 0;
     case kArchRet:
@@ -1362,6 +1383,7 @@ int InstructionScheduler::GetInstructionLatency(const Instruction* instr) {
     case kMips64Mul:
       return MulLatency();
     case kMips64MulOvf:
+    case kMips64DMulOvf:
       return MulOverflowLatency();
     case kMips64MulHigh:
       return MulhLatency();

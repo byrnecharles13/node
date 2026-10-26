@@ -2,13 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --experimental-wasm-gc
-
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 var builder = new WasmModuleBuilder();
 
-let array_index = builder.addArray(kWasmI64, true);
+let array_index = builder.addArray(kWasmI64);
 let sig_index = builder.addType(kSig_v_v);
 
 let main = builder.addFunction("main", kSig_v_i);
@@ -16,15 +14,14 @@ let other = builder.addFunction("other", sig_index).addBody([]);
 
 let table = builder.addTable(kWasmAnyFunc, 1, 1);
 builder.addActiveElementSegment(
-    0,                         // table
-    WasmInitExpr.I32Const(0),  // offset
-    [1]);                      // values
+    0,                // table
+    wasmI32Const(0),  // offset
+    [1]);             // values
 
 main.addBody([
     kExprI64Const, 0x33,
     kExprLocalGet, 0,
-    kGCPrefix, kExprRttCanon, array_index,
-    kGCPrefix, kExprArrayNewWithRtt, array_index,
+    kGCPrefix, kExprArrayNew, array_index,
     kExprDrop,
     kExprI32Const, 0,
     kExprCallIndirect, sig_index, table.index,

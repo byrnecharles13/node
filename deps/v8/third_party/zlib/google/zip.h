@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,10 +10,10 @@
 #include <utility>
 #include <vector>
 
-#include "base/callback.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/files/platform_file.h"
+#include "base/functional/callback.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 
@@ -170,6 +170,9 @@ bool ZipFiles(const base::FilePath& src_dir,
               int dest_fd);
 #endif  // defined(OS_POSIX) || defined(OS_FUCHSIA)
 
+// Callback reporting the number of bytes written during Unzip.
+using UnzipProgressCallback = base::RepeatingCallback<void(uint64_t bytes)>;
+
 // Options of the Unzip function, with valid default values.
 struct UnzipOptions {
   // Encoding of entry paths in the ZIP archive. By default, paths are assumed
@@ -180,11 +183,27 @@ struct UnzipOptions {
   // everything gets extracted.
   FilterCallback filter;
 
+  // Callback to report bytes extracted from the ZIP.
+  UnzipProgressCallback progress;
+
   // Password to decrypt the encrypted files.
   std::string password;
 
   // Should ignore errors when extracting files?
   bool continue_on_error = false;
+};
+
+// Option of the Unzip function to control handling of symbolic link entries.
+enum class UnzipSymlinkOption {
+  // Don't preserve internal symbolic links. On POSIX, consider symbolic link
+  // entries as errors. On other platforms, links are not differentiated from
+  // regular files.
+  DONT_PRESERVE,
+#if defined(OS_POSIX)
+  // Preserve internal symbolic links. Links which point outside of the
+  // extraction directory or specify an absolute target are rejected.
+  PRESERVE,
+#endif
 };
 
 typedef base::RepeatingCallback<std::unique_ptr<WriterDelegate>(
@@ -200,13 +219,16 @@ bool Unzip(const base::PlatformFile& zip_file,
            DirectoryCreator directory_creator,
            UnzipOptions options = {});
 
-// Unzips the contents of |zip_file| into |dest_dir|.
-// This function does not overwrite any existing file.
-// A filename collision will result in an error.
-// Therefore, |dest_dir| should initially be an empty directory.
-bool Unzip(const base::FilePath& zip_file,
-           const base::FilePath& dest_dir,
-           UnzipOptions options = {});
+// Unzips the contents of |zip_file| into |dest_dir|.  This function does not
+// overwrite any existing file.  A filename collision will result in an error.
+// Therefore, |dest_dir| should initially be an empty directory. If
+// |allow_symlinks| is set internal symbolics links will be preserved. Else,
+// symbolic link entries are considered errors.
+bool Unzip(
+    const base::FilePath& zip_file,
+    const base::FilePath& dest_dir,
+    UnzipOptions options = {},
+    UnzipSymlinkOption symlink_option = UnzipSymlinkOption::DONT_PRESERVE);
 
 }  // namespace zip
 

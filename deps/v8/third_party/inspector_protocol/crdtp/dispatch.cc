@@ -1,4 +1,4 @@
-// Copyright 2020 The Chromium Authors. All rights reserved.
+// Copyright 2020 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -27,6 +27,14 @@ DispatchResponse DispatchResponse::Success() {
 DispatchResponse DispatchResponse::FallThrough() {
   DispatchResponse result;
   result.code_ = DispatchCode::FALL_THROUGH;
+  return result;
+}
+
+// static
+DispatchResponse DispatchResponse::FallThrough(std::string associated_data) {
+  DispatchResponse result;
+  result.code_ = DispatchCode::FALL_THROUGH;
+  result.message_ = std::move(associated_data);
   return result;
 }
 
@@ -78,14 +86,23 @@ DispatchResponse DispatchResponse::ServerError(std::string message) {
   return result;
 }
 
+// static
+DispatchResponse DispatchResponse::SessionNotFound(std::string message) {
+  DispatchResponse result;
+  result.code_ = DispatchCode::SESSION_NOT_FOUND;
+  result.message_ = std::move(message);
+  return result;
+}
+
 // =============================================================================
 // Dispatchable - a shallow parser for CBOR encoded DevTools messages
 // =============================================================================
-namespace {
-constexpr size_t kEncodedEnvelopeHeaderSize = 1 + 1 + sizeof(uint32_t);
-}  // namespace
-
-Dispatchable::Dispatchable(span<uint8_t> serialized) : serialized_(serialized) {
+Dispatchable::Dispatchable(span<uint8_t> serialized,
+                           std::string_view associated_data,
+                           FallthroughCallback fallthrough_callback)
+    : serialized_(serialized),
+      associated_data_(associated_data),
+      fallthrough_callback_(std::move(fallthrough_callback)) {
   Status s = cbor::CheckCBORMessage(serialized);
   if (!s.ok()) {
     status_ = {Error::MESSAGE_MUST_BE_AN_OBJECT, s.pos};
@@ -105,9 +122,8 @@ Dispatchable::Dispatchable(span<uint8_t> serialized) : serialized_(serialized) {
   // expect to see after we're done parsing the envelope contents.
   // This way we can compare and produce an error if the contents
   // didn't fit exactly into the envelope length.
-  const size_t pos_past_envelope = tokenizer.Status().pos +
-                                   kEncodedEnvelopeHeaderSize +
-                                   tokenizer.GetEnvelopeContents().size();
+  const size_t pos_past_envelope =
+      tokenizer.Status().pos + tokenizer.GetEnvelopeHeader().outer_size();
   tokenizer.EnterEnvelope();
   if (tokenizer.TokenTag() == cbor::CBORTokenTag::ERROR_VALUE) {
     status_ = tokenizer.Status();
@@ -261,6 +277,17 @@ bool Dispatchable::MaybeParseSessionId(cbor::CBORTokenizer* tokenizer) {
   return true;
 }
 
+FallthroughCallback Dispatchable::TakeFallthroughCallback() {
+  FallthroughCallback result;
+  std::swap(result, fallthrough_callback_);
+  return result;
+}
+
+void Dispatchable::DispatchFallThrough(const std::string& associated_data) {
+  assert(fallthrough_callback_);
+  TakeFallthroughCallback()(call_id_, method_, serialized_, associated_data);
+}
+
 namespace {
 class ProtocolError : public Serializable {
  public:
@@ -310,15 +337,10 @@ class ProtocolError : public Serializable {
 
 std::unique_ptr<Serializable> CreateErrorResponse(
     int call_id,
-    DispatchResponse dispatch_response,
-    const ErrorSupport* errors) {
+    DispatchResponse dispatch_response) {
   auto protocol_error =
       std::make_unique<ProtocolError>(std::move(dispatch_response));
   protocol_error->SetCallId(call_id);
-  if (errors && !errors->Errors().empty()) {
-    protocol_error->SetData(
-        std::string(errors->Errors().begin(), errors->Errors().end()));
-  }
   return protocol_error;
 }
 
@@ -426,13 +448,13 @@ void DomainDispatcher::Callback::dispose() {
 
 DomainDispatcher::Callback::Callback(
     std::unique_ptr<DomainDispatcher::WeakPtr> backend_impl,
-    int call_id,
-    span<uint8_t> method,
-    span<uint8_t> message)
+    Dispatchable& dispatchable)
     : backend_impl_(std::move(backend_impl)),
-      call_id_(call_id),
-      method_(method),
-      message_(message.begin(), message.end()) {}
+      call_id_(dispatchable.CallId()),
+      method_(dispatchable.Method()),
+      message_(dispatchable.Serialized().begin(),
+               dispatchable.Serialized().end()),
+      fallthrough_callback_(dispatchable.TakeFallthroughCallback()) {}
 
 void DomainDispatcher::Callback::sendIfActive(
     std::unique_ptr<Serializable> partialMessage,
@@ -447,8 +469,11 @@ void DomainDispatcher::Callback::sendIfActive(
 void DomainDispatcher::Callback::fallThroughIfActive() {
   if (!backend_impl_ || !backend_impl_->get())
     return;
-  backend_impl_->get()->channel()->FallThrough(call_id_, method_,
-                                               SpanFrom(message_));
+  // Fallthrough callback may be retaining session which outlives backend.
+  // TODO(caseq): handle fall-through associated data for async callbacks.
+  fallthrough_callback_(call_id_, method_, SpanFrom(message_),
+                        std::string_view());
+  fallthrough_callback_ = nullptr;
   backend_impl_ = nullptr;
 }
 
@@ -473,26 +498,9 @@ void DomainDispatcher::sendResponse(int call_id,
   frontend_channel_->SendProtocolResponse(call_id, std::move(serializable));
 }
 
-bool DomainDispatcher::MaybeReportInvalidParams(
-    const Dispatchable& dispatchable,
-    const ErrorSupport& errors) {
-  if (errors.Errors().empty())
-    return false;
-  if (frontend_channel_) {
-    frontend_channel_->SendProtocolResponse(
-        dispatchable.CallId(),
-        CreateErrorResponse(
-            dispatchable.CallId(),
-            DispatchResponse::InvalidParams("Invalid parameters"), &errors));
-  }
-  return true;
-}
-
-bool DomainDispatcher::MaybeReportInvalidParams(
-    const Dispatchable& dispatchable,
-    const DeserializerState& state) {
-  if (state.status().ok())
-    return false;
+void DomainDispatcher::ReportInvalidParams(const Dispatchable& dispatchable,
+                                           const DeserializerState& state) {
+  assert(!state.status().ok());
   if (frontend_channel_) {
     frontend_channel_->SendProtocolResponse(
         dispatchable.CallId(),
@@ -500,7 +508,6 @@ bool DomainDispatcher::MaybeReportInvalidParams(
             dispatchable.CallId(),
             DispatchResponse::InvalidParams("Invalid parameters"), state));
   }
-  return true;
 }
 
 void DomainDispatcher::clearFrontend() {
@@ -519,17 +526,6 @@ std::unique_ptr<DomainDispatcher::WeakPtr> DomainDispatcher::weakPtr() {
 // =============================================================================
 // UberDispatcher - dispatches between domains (backends).
 // =============================================================================
-UberDispatcher::DispatchResult::DispatchResult(bool method_found,
-                                               std::function<void()> runnable)
-    : method_found_(method_found), runnable_(runnable) {}
-
-void UberDispatcher::DispatchResult::Run() {
-  if (!runnable_)
-    return;
-  runnable_();
-  runnable_ = nullptr;
-}
-
 UberDispatcher::UberDispatcher(FrontendChannel* frontend_channel)
     : frontend_channel_(frontend_channel) {
   assert(frontend_channel);
@@ -546,36 +542,34 @@ size_t DotIdx(span<uint8_t> method) {
 }
 }  // namespace
 
-UberDispatcher::DispatchResult UberDispatcher::Dispatch(
-    const Dispatchable& dispatchable) const {
+void UberDispatcher::Dispatch(Dispatchable& dispatchable) {
   span<uint8_t> method = FindByFirst(redirects_, dispatchable.Method(),
                                      /*default_value=*/dispatchable.Method());
   size_t dot_idx = DotIdx(method);
   if (dot_idx != kNotFound) {
     span<uint8_t> domain = method.subspan(0, dot_idx);
     span<uint8_t> command = method.subspan(dot_idx + 1);
-    DomainDispatcher* dispatcher = FindByFirst(dispatchers_, domain);
-    if (dispatcher) {
-      std::function<void(const Dispatchable&)> dispatched =
-          dispatcher->Dispatch(command);
-      if (dispatched) {
-        return DispatchResult(
-            true, [dispatchable, dispatched = std::move(dispatched)]() {
-              dispatched(dispatchable);
-            });
+    if (DomainDispatcher* dispatcher = FindByFirst(dispatchers_, domain)) {
+      if (dispatcher->Dispatch(command, dispatchable)) {
+        return;
       }
     }
   }
-  return DispatchResult(false, [this, dispatchable]() {
-    frontend_channel_->SendProtocolResponse(
-        dispatchable.CallId(),
-        CreateErrorResponse(dispatchable.CallId(),
-                            DispatchResponse::MethodNotFound(
-                                "'" +
-                                std::string(dispatchable.Method().begin(),
-                                            dispatchable.Method().end()) +
-                                "' wasn't found")));
-  });
+  if (auto fallthrough = dispatchable.TakeFallthroughCallback()) {
+    fallthrough(dispatchable.CallId(), dispatchable.Method(),
+                dispatchable.Serialized(), std::string_view());
+  } else {
+    SendMethodNotFound(dispatchable.CallId(), method);
+  }
+}
+
+void UberDispatcher::SendMethodNotFound(int call_id, span<uint8_t> method) {
+  frontend_channel_->SendProtocolResponse(
+      call_id,
+      CreateErrorResponse(call_id,
+                          DispatchResponse::MethodNotFound(
+                              "'" + std::string(method.begin(), method.end()) +
+                              "' wasn't found")));
 }
 
 template <typename T>

@@ -16,16 +16,13 @@
 
 int main(int argc, char* argv[]) {
   // Initialize V8.
-  v8::V8::InitializeICUDefaultLocation(argv[0]);
+  if (!v8::V8::InitializeICUDefaultLocation(argv[0])) {
+    fprintf(stderr, "Failed to initialize ICU\n");
+    return 1;
+  }
   v8::V8::InitializeExternalStartupData(argv[0]);
   std::unique_ptr<v8::Platform> platform = v8::platform::NewDefaultPlatform();
   v8::V8::InitializePlatform(platform.get());
-#ifdef V8_SANDBOX
-  if (!v8::V8::InitializeSandbox()) {
-    fprintf(stderr, "Error initializing the V8 sandbox\n");
-    return 1;
-  }
-#endif
   v8::V8::Initialize();
 
   // Create a new Isolate and make it the current one.

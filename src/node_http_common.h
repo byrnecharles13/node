@@ -6,6 +6,7 @@
 #include "v8.h"
 #include "node_mem.h"
 
+#include <memory>
 #include <string>
 
 namespace node {
@@ -24,61 +25,62 @@ class Environment;
   V(PATH, ":path")                                                            \
   V(PROTOCOL, ":protocol")
 
-#define HTTP_REGULAR_HEADERS(V)                                               \
-  V(ACCEPT_ENCODING, "accept-encoding")                                       \
-  V(ACCEPT_LANGUAGE, "accept-language")                                       \
-  V(ACCEPT_RANGES, "accept-ranges")                                           \
-  V(ACCEPT, "accept")                                                         \
-  V(ACCESS_CONTROL_ALLOW_CREDENTIALS, "access-control-allow-credentials")     \
-  V(ACCESS_CONTROL_ALLOW_HEADERS, "access-control-allow-headers")             \
-  V(ACCESS_CONTROL_ALLOW_METHODS, "access-control-allow-methods")             \
-  V(ACCESS_CONTROL_ALLOW_ORIGIN, "access-control-allow-origin")               \
-  V(ACCESS_CONTROL_EXPOSE_HEADERS, "access-control-expose-headers")           \
-  V(ACCESS_CONTROL_REQUEST_HEADERS, "access-control-request-headers")         \
-  V(ACCESS_CONTROL_REQUEST_METHOD, "access-control-request-method")           \
-  V(AGE, "age")                                                               \
-  V(AUTHORIZATION, "authorization")                                           \
-  V(CACHE_CONTROL, "cache-control")                                           \
-  V(CONNECTION, "connection")                                                 \
-  V(CONTENT_DISPOSITION, "content-disposition")                               \
-  V(CONTENT_ENCODING, "content-encoding")                                     \
-  V(CONTENT_LENGTH, "content-length")                                         \
-  V(CONTENT_TYPE, "content-type")                                             \
-  V(COOKIE, "cookie")                                                         \
-  V(DATE, "date")                                                             \
-  V(ETAG, "etag")                                                             \
-  V(FORWARDED, "forwarded")                                                   \
-  V(HOST, "host")                                                             \
-  V(IF_MODIFIED_SINCE, "if-modified-since")                                   \
-  V(IF_NONE_MATCH, "if-none-match")                                           \
-  V(IF_RANGE, "if-range")                                                     \
-  V(LAST_MODIFIED, "last-modified")                                           \
-  V(LINK, "link")                                                             \
-  V(LOCATION, "location")                                                     \
-  V(RANGE, "range")                                                           \
-  V(REFERER, "referer")                                                       \
-  V(SERVER, "server")                                                         \
-  V(SET_COOKIE, "set-cookie")                                                 \
-  V(STRICT_TRANSPORT_SECURITY, "strict-transport-security")                   \
-  V(TRANSFER_ENCODING, "transfer-encoding")                                   \
-  V(TE, "te")                                                                 \
-  V(UPGRADE_INSECURE_REQUESTS, "upgrade-insecure-requests")                   \
-  V(UPGRADE, "upgrade")                                                       \
-  V(USER_AGENT, "user-agent")                                                 \
-  V(VARY, "vary")                                                             \
-  V(X_CONTENT_TYPE_OPTIONS, "x-content-type-options")                         \
-  V(X_FRAME_OPTIONS, "x-frame-options")                                       \
-  V(KEEP_ALIVE, "keep-alive")                                                 \
-  V(PROXY_CONNECTION, "proxy-connection")                                     \
-  V(X_XSS_PROTECTION, "x-xss-protection")                                     \
-  V(ALT_SVC, "alt-svc")                                                       \
-  V(CONTENT_SECURITY_POLICY, "content-security-policy")                       \
-  V(EARLY_DATA, "early-data")                                                 \
-  V(EXPECT_CT, "expect-ct")                                                   \
-  V(ORIGIN, "origin")                                                         \
-  V(PURPOSE, "purpose")                                                       \
-  V(TIMING_ALLOW_ORIGIN, "timing-allow-origin")                               \
-  V(X_FORWARDED_FOR, "x-forwarded-for")
+#define HTTP_REGULAR_HEADERS(V)                                                \
+  V(ACCEPT_ENCODING, "accept-encoding")                                        \
+  V(ACCEPT_LANGUAGE, "accept-language")                                        \
+  V(ACCEPT_RANGES, "accept-ranges")                                            \
+  V(ACCEPT, "accept")                                                          \
+  V(ACCESS_CONTROL_ALLOW_CREDENTIALS, "access-control-allow-credentials")      \
+  V(ACCESS_CONTROL_ALLOW_HEADERS, "access-control-allow-headers")              \
+  V(ACCESS_CONTROL_ALLOW_METHODS, "access-control-allow-methods")              \
+  V(ACCESS_CONTROL_ALLOW_ORIGIN, "access-control-allow-origin")                \
+  V(ACCESS_CONTROL_EXPOSE_HEADERS, "access-control-expose-headers")            \
+  V(ACCESS_CONTROL_REQUEST_HEADERS, "access-control-request-headers")          \
+  V(ACCESS_CONTROL_REQUEST_METHOD, "access-control-request-method")            \
+  V(AGE, "age")                                                                \
+  V(AUTHORIZATION, "authorization")                                            \
+  V(CACHE_CONTROL, "cache-control")                                            \
+  V(CONNECTION, "connection")                                                  \
+  V(CONTENT_DISPOSITION, "content-disposition")                                \
+  V(CONTENT_ENCODING, "content-encoding")                                      \
+  V(CONTENT_LENGTH, "content-length")                                          \
+  V(CONTENT_TYPE, "content-type")                                              \
+  V(COOKIE, "cookie")                                                          \
+  V(DATE, "date")                                                              \
+  V(ETAG, "etag")                                                              \
+  V(FORWARDED, "forwarded")                                                    \
+  V(HOST, "host")                                                              \
+  V(IF_MODIFIED_SINCE, "if-modified-since")                                    \
+  V(IF_NONE_MATCH, "if-none-match")                                            \
+  V(IF_RANGE, "if-range")                                                      \
+  V(LAST_MODIFIED, "last-modified")                                            \
+  V(LINK, "link")                                                              \
+  V(LOCATION, "location")                                                      \
+  V(RANGE, "range")                                                            \
+  V(REFERER, "referer")                                                        \
+  V(SERVER, "server")                                                          \
+  V(SET_COOKIE, "set-cookie")                                                  \
+  V(STRICT_TRANSPORT_SECURITY, "strict-transport-security")                    \
+  V(TRANSFER_ENCODING, "transfer-encoding")                                    \
+  V(TE, "te")                                                                  \
+  V(UPGRADE_INSECURE_REQUESTS, "upgrade-insecure-requests")                    \
+  V(UPGRADE, "upgrade")                                                        \
+  V(USER_AGENT, "user-agent")                                                  \
+  V(VARY, "vary")                                                              \
+  V(X_CONTENT_TYPE_OPTIONS, "x-content-type-options")                          \
+  V(X_FRAME_OPTIONS, "x-frame-options")                                        \
+  V(KEEP_ALIVE, "keep-alive")                                                  \
+  V(PROXY_CONNECTION, "proxy-connection")                                      \
+  V(X_XSS_PROTECTION, "x-xss-protection")                                      \
+  V(ALT_SVC, "alt-svc")                                                        \
+  V(CONTENT_SECURITY_POLICY, "content-security-policy")                        \
+  V(EARLY_DATA, "early-data")                                                  \
+  V(EXPECT_CT, "expect-ct")                                                    \
+  V(ORIGIN, "origin")                                                          \
+  V(PURPOSE, "purpose")                                                        \
+  V(TIMING_ALLOW_ORIGIN, "timing-allow-origin")                                \
+  V(X_FORWARDED_FOR, "x-forwarded-for")                                        \
+  V(PRIORITY, "priority")
 
 #define HTTP_ADDITIONAL_HEADERS(V)                                            \
   V(ACCEPT_CHARSET, "accept-charset")                                         \
@@ -239,7 +241,7 @@ enum http_status_codes {
   V(VERSION_CONTROL, "VERSION-CONTROL")
 
 // NgHeaders takes as input a block of headers provided by the
-// JavaScript side (see http2's mapToHeaders function) and
+// JavaScript side (see http2's buildNgHeaderString function) and
 // converts it into a array of ng header structs. This is done
 // generically to handle both http/2 and (in the future) http/3,
 // which use nearly identical structs. The template parameter
@@ -413,8 +415,11 @@ class NgRcBufPointer : public MemoryRetainer {
         const char* header_name = reinterpret_cast<const char*>(ptr.data());
         v8::Eternal<v8::String>& eternal = static_str_map[header_name];
         if (eternal.IsEmpty()) {
-          v8::Local<v8::String> str =
-              GetInternalizedString(env, ptr).ToLocalChecked();
+          v8::Local<v8::String> str;
+          if (!GetInternalizedString(env, ptr).ToLocal(&str)) {
+            ptr.reset();
+            return {};
+          }
           eternal.Set(env->isolate(), str);
           return str;
         }
@@ -435,11 +440,10 @@ class NgRcBufPointer : public MemoryRetainer {
       }
 
       allocator->StopTrackingMemory(ptr.get());
-      External* h_str = new External(std::move(ptr));
+      auto h_str = std::make_unique<External>(std::move(ptr));
       v8::MaybeLocal<v8::String> str =
-          v8::String::NewExternalOneByte(env->isolate(), h_str);
-      if (str.IsEmpty())
-        delete h_str;
+          v8::String::NewExternalOneByte(env->isolate(), h_str.get());
+      if (!str.IsEmpty()) h_str.release();
 
       return str;
     }

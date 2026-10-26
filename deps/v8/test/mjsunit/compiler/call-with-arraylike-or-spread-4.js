@@ -2,12 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --turbo-optimize-apply --opt
-
-// These tests do not work well if this script is run more than once (e.g.
-// --stress-opt); after a few runs the whole function is immediately compiled
-// and assertions would fail. We prevent re-runs.
-// Flags: --nostress-opt --no-always-opt
+// Flags: --allow-natives-syntax --turbo-optimize-apply --turbofan
 
 // These tests do not work well if we flush the feedback vector, which causes
 // deoptimization.
@@ -22,7 +17,10 @@
 // Test deopt when array map changes.
 (function () {
   "use strict";
-  var sum_js_got_interpreted = true;
+  // Introduce an indirection, so that we don't depend on
+  // ContextCells constness.
+  var sum_js_got_interpreted = null;
+  sum_js_got_interpreted = true;
   function sum_js(a, b, c) {
     sum_js_got_interpreted = %IsBeingInterpreted();
     return a + b + c;

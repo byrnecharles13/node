@@ -6,7 +6,6 @@
 
 #include "src/base/bits.h"
 #include "src/base/platform/platform.h"
-#include "src/base/platform/wrappers.h"
 
 namespace v8 {
 namespace base {
@@ -107,7 +106,7 @@ void EmulatedVirtualAddressSubspace::FreePages(Address address, size_t size) {
 
 Address EmulatedVirtualAddressSubspace::AllocateSharedPages(
     Address hint, size_t size, PagePermissions permissions,
-    PlatformSharedMemoryHandle handle, uint64_t offset) {
+    SharedMemoryHandle handle, uint64_t offset) {
   // Can only allocate shared pages in the unmapped region.
   if (!IsUsableSizeForUnmappedRegion(size)) return kNullAddress;
 
@@ -174,8 +173,16 @@ bool EmulatedVirtualAddressSubspace::CanAllocateSubspaces() {
 std::unique_ptr<v8::VirtualAddressSpace>
 EmulatedVirtualAddressSubspace::AllocateSubspace(
     Address hint, size_t size, size_t alignment,
-    PagePermissions max_page_permissions) {
-  UNREACHABLE();
+    PagePermissions max_page_permissions,
+    std::optional<MemoryProtectionKeyId> key,
+    std::optional<SharedMemoryHandle> handle) {
+  UNIMPLEMENTED();
+}
+
+bool EmulatedVirtualAddressSubspace::RecommitPages(
+    Address address, size_t size, PagePermissions permissions) {
+  DCHECK(Contains(address, size));
+  return parent_space_->RecommitPages(address, size, permissions);
 }
 
 bool EmulatedVirtualAddressSubspace::DiscardSystemPages(Address address,

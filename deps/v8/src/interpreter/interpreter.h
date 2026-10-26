@@ -13,11 +13,11 @@
 #include "src/base/macros.h"
 #include "src/builtins/builtins.h"
 #include "src/interpreter/bytecodes.h"
-#include "src/runtime/runtime.h"
 
 namespace v8 {
 namespace internal {
 
+class AccountingAllocator;
 class BytecodeArray;
 class Callable;
 class UnoptimizedCompilationJob;
@@ -34,6 +34,18 @@ class ZoneVector;
 namespace interpreter {
 
 class InterpreterAssembler;
+
+struct BytecodeHandlerData {
+  BytecodeHandlerData(Bytecode bytecode, OperandScale operand_scale)
+      : bytecode(bytecode), operand_scale(operand_scale) {}
+
+  Bytecode bytecode;
+  OperandScale operand_scale;
+  ImplicitRegisterUse implicit_register_use = ImplicitRegisterUse::kNone;
+  bool made_call = false;
+  bool reloaded_frame_ptr = false;
+  bool bytecode_array_valid = true;
+};
 
 class Interpreter {
  public:
@@ -62,17 +74,12 @@ class Interpreter {
 
   // If the bytecode handler for |bytecode| and |operand_scale| has not yet
   // been loaded, deserialize it. Then return the handler.
-  V8_EXPORT_PRIVATE CodeT GetBytecodeHandler(Bytecode bytecode,
-                                             OperandScale operand_scale);
+  V8_EXPORT_PRIVATE Tagged<Code> GetBytecodeHandler(Bytecode bytecode,
+                                                    OperandScale operand_scale);
 
   // Set the bytecode handler for |bytecode| and |operand_scale|.
   void SetBytecodeHandler(Bytecode bytecode, OperandScale operand_scale,
-                          CodeT handler);
-
-  // Disassembler support.
-  V8_EXPORT_PRIVATE const char* LookupNameOfBytecodeHandler(const Code code);
-
-  V8_EXPORT_PRIVATE Handle<JSObject> GetDispatchCountersObject();
+                          Tagged<Code> handler);
 
   void ForEachBytecode(const std::function<void(Bytecode, OperandScale)>& f);
 
@@ -82,10 +89,6 @@ class Interpreter {
 
   Address dispatch_table_address() {
     return reinterpret_cast<Address>(&dispatch_table_[0]);
-  }
-
-  Address bytecode_dispatch_counters_table() {
-    return reinterpret_cast<Address>(bytecode_dispatch_counters_table_.get());
   }
 
   Address address_of_interpreter_entry_trampoline_instruction_start() const {
@@ -98,10 +101,6 @@ class Interpreter {
   friend class v8::internal::SetupIsolateDelegate;
   friend class v8::internal::IgnitionStatisticsTester;
 
-  V8_EXPORT_PRIVATE void InitDispatchCounters();
-  V8_EXPORT_PRIVATE uintptr_t GetDispatchCounter(Bytecode from,
-                                                 Bytecode to) const;
-
   // Get dispatch table index of bytecode.
   static size_t GetDispatchTableIndex(Bytecode bytecode,
                                       OperandScale operand_scale);
@@ -112,15 +111,8 @@ class Interpreter {
 
   Isolate* isolate_;
   Address dispatch_table_[kDispatchTableSize];
-  std::unique_ptr<uintptr_t[]> bytecode_dispatch_counters_table_;
   Address interpreter_entry_trampoline_instruction_start_;
 };
-
-#ifdef V8_IGNITION_DISPATCH_COUNTING
-#define V8_IGNITION_DISPATCH_COUNTING_BOOL true
-#else
-#define V8_IGNITION_DISPATCH_COUNTING_BOOL false
-#endif
 
 }  // namespace interpreter
 }  // namespace internal

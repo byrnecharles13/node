@@ -2,14 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --experimental-wasm-gc --no-liftoff --experimental-wasm-nn-locals
-
 d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 // Test that comparisons with array length in a loop get optimized away.
 (function ArrayLoopOptimizationTest() {
   var builder = new WasmModuleBuilder();
-  var array_index = builder.addArray(kWasmI32, true);
+  var array_index = builder.addArray(kWasmI32);
 
   // Increase these parameters to measure performance.
   let array_size = 10; // 100000000;
@@ -26,7 +24,7 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
       // length = array.length
       kExprLocalGet, 0,
-      kGCPrefix, kExprArrayLen, array_index,
+      kGCPrefix, kExprArrayLen,
       kExprLocalSet, 1,
 
       // while (true) {
@@ -77,7 +75,6 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
 
 (function ImmutableLoadThroughEffect() {
   var builder = new WasmModuleBuilder();
-  builder.setNominal();
   var struct = builder.addStruct([
     makeField(kWasmI32, false), makeField(kWasmI32, true)]);
 
@@ -121,14 +118,14 @@ d8.file.execute("test/mjsunit/wasm/wasm-module-builder.js");
   builder.addFunction("main", makeSig([wasmRefType(kWasmFuncRef)], [kWasmI32]))
     .addBody([
       // Type check the function
-      kExprLocalGet, 0, kGCPrefix, kExprRttCanon, sig, kGCPrefix, kExprRefCast,
+      kExprLocalGet, 0, kGCPrefix, kExprRefCast, sig,
       kExprDrop,
       // Introduce unknown effect
       kExprCallFunction, effect,
       // TF should be able to eliminate the second type check, and return the
       // constant 1.
-      kExprLocalGet, 0, kGCPrefix, kExprRttCanon, sig,
-      kGCPrefix, kExprRefTest])
+      kExprLocalGet, 0,
+      kGCPrefix, kExprRefTest, sig])
     .exportFunc();
 
   var instance = builder.instantiate({m : { f: function () {} }});

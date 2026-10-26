@@ -10,10 +10,10 @@
 #include "include/cppgc/heap-consistency.h"
 #include "include/cppgc/persistent.h"
 #include "include/cppgc/prefinalizer.h"
-#include "src/heap/cppgc/globals.h"
-#include "src/heap/cppgc/heap-visitor.h"
-#include "src/heap/cppgc/heap.h"
-#include "src/heap/cppgc/object-view.h"
+#include "src/heap/cppgc-internal/globals.h"
+#include "src/heap/cppgc-internal/heap-visitor.h"
+#include "src/heap/cppgc-internal/heap.h"
+#include "src/heap/cppgc-internal/object-view.h"
 #include "test/unittests/heap/cppgc/tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -26,11 +26,11 @@ class WorkloadsTest : public testing::TestWithHeap {
  public:
   void ConservativeGC() {
     internal::Heap::From(GetHeap())->CollectGarbage(
-        Heap::Config::ConservativeAtomicConfig());
+        GCConfig::ConservativeAtomicConfig());
   }
   void PreciseGC() {
     internal::Heap::From(GetHeap())->CollectGarbage(
-        Heap::Config::PreciseAtomicConfig());
+        GCConfig::PreciseAtomicConfig());
   }
 };
 

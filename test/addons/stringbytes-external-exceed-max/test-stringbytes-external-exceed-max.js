@@ -17,7 +17,8 @@ try {
   buf = Buffer.allocUnsafe(kStringMaxLength * 2 + 2);
 } catch (e) {
   // If the exception is not due to memory confinement then rethrow it.
-  if (e.message !== 'Array buffer allocation failed') throw (e);
+  if (e.code !== 'ERR_MEMORY_ALLOCATION_FAILED' &&
+      e.message !== 'Array buffer allocation failed') throw (e);
   common.skip(skipMessage);
 }
 
@@ -33,5 +34,5 @@ assert.throws(() => {
   message: `Cannot create a string longer than 0x${stringLengthHex} ` +
            'characters',
   code: 'ERR_STRING_TOO_LONG',
-  name: 'Error'
+  name: 'Error',
 });

@@ -21,20 +21,7 @@ var prettyPrinted = function prettyPrinted(msg) { return msg; };
   }
 })();
 
-// Mock Math.pow. Work around an optimization for -0.5.
-(function() {
-  const origMathPow = Math.pow;
-  Math.pow = function(a, b) {
-    if (b === -0.5) {
-      return 0;
-    } else {
-      return origMathPow(a, b);
-    }
-  }
-})();
-
-
-// Mock Date.
+// Mock Date and Temporal.Now
 (function() {
   let index = 0;
   let mockDate = 1477662728696;
@@ -81,11 +68,31 @@ var prettyPrinted = function prettyPrinted(msg) { return msg; };
   }
 
   Date = new Proxy(Date, handler);
-})();
 
-// Mock performance methods.
-performance.now = function() { return 1.2; };
-performance.measureMemory = function() { return []; };
+  // Temporal.Now also accesses local time; but it is just a bag of functions
+  // we can replace without needing a proxy
+  if (typeof Temporal != "undefined") {
+    const mockZDTNow = function(tz) {
+      return new Temporal.ZonedDateTime(BigInt(mockDateNow()) * 1_000_000n, tz || "utc");
+    }
+
+    Temporal.Now.instant = function(tz) {
+      return mockZDTNow(tz).toInstant();
+    }
+    Temporal.Now.plainDateISO = function(tz) {
+      return mockZDTNow(tz).toPlainDate();
+    }
+    Temporal.Now.plainTimeISO = function(tz) {
+      return mockZDTNow(tz).toPlainTime();
+    }
+    Temporal.Now.plainDateTimeISO = function(tz) {
+      return mockZDTNow(tz).toPlainDateTime();
+    }
+    Temporal.Now.zonedDateTimeISO = function(tz) {
+      return mockZDTNow(tz);
+    }
+  }
+})();
 
 // Mock readline so that test cases don't hang.
 readline = function() { return "foo"; };
@@ -102,6 +109,8 @@ Object.defineProperty(
   const origArrayFrom = Array.from;
   const origArrayIsArray = Array.isArray;
   const origFunctionPrototype = Function.prototype;
+  const origArrayMap = Array.prototype.map;
+  const applyOrigArrayMap = origFunctionPrototype.apply.bind(origArrayMap);
   const origIsNaN = isNaN;
   const origIterator = Symbol.iterator;
   const deNaNify = function(value) { return origIsNaN(value) ? 1 : value; };
@@ -110,10 +119,17 @@ Object.defineProperty(
     // Remove NaN values from parameters to "set" function.
     const set = type.prototype.set;
     type.prototype.set = function(array, offset) {
-      if (Array.isArray(array)) {
-        array = array.map(deNaNify);
+      // The 'set' function also treats passed objects as array-like if they
+      // have a length property.
+      if (origArrayIsArray(array) || array.length) {
+        array = applyOrigArrayMap(Array.from(array), [deNaNify]);
       }
       set.apply(this, [array, offset]);
+    };
+
+    const fill = type.prototype.fill;
+    type.prototype.fill = function(value, start, end) {
+      fill.apply(this, [deNaNify(value), start, end]);
     };
 
     const handler = {
@@ -126,7 +142,7 @@ Object.defineProperty(
             args[i] = origArrayFrom(args[i]);
           }
           if (origArrayIsArray(args[i])) {
-            args[i] = args[i].map(deNaNify);
+            args[i] = applyOrigArrayMap(args[i], [deNaNify]);
           }
         }
 
@@ -149,14 +165,37 @@ Object.defineProperty(
     return new Proxy(type, handler);
   }
 
+  Float16Array = mock(Float16Array);
   Float32Array = mock(Float32Array);
   Float64Array = mock(Float64Array);
+
+  const origObjectDefineProperty = Object.defineProperty;
+  const safeFloat16Array = Float16Array;
+  const safeFloat32Array = Float32Array;
+  const safeFloat64Array = Float64Array;
+
+  // Mock float-array access via Object.defineProperty.
+  Object.defineProperty = function (obj, prop, descriptor) {
+    let newDescriptor = descriptor;
+    const isFloatArray = (
+        obj instanceof safeFloat16Array ||
+        obj instanceof safeFloat32Array ||
+        obj instanceof safeFloat64Array);
+    if (isFloatArray && !origIsNaN(prop)) {
+      newDescriptor = { value : deNaNify(descriptor?.value) };
+    }
+    origObjectDefineProperty(obj, prop, newDescriptor);
+  };
 })();
 
 // Mock buffer access via DataViews because of varying NaN patterns.
 (function() {
   const origIsNaN = isNaN;
   const deNaNify = function(value) { return origIsNaN(value) ? 1 : value; };
+  const origSetFloat16 = DataView.prototype.setFloat16;
+  DataView.prototype.setFloat16 = function(offset, value, ...rest) {
+    origSetFloat16.call(this, offset, deNaNify(value), ...rest);
+  };
   const origSetFloat32 = DataView.prototype.setFloat32;
   DataView.prototype.setFloat32 = function(offset, value, ...rest) {
     origSetFloat32.call(this, offset, deNaNify(value), ...rest);
@@ -165,6 +204,89 @@ Object.defineProperty(
   DataView.prototype.setFloat64 = function(offset, value, ...rest) {
     origSetFloat64.call(this, offset, deNaNify(value), ...rest);
   };
+})();
+
+// Mock maximum typed-array buffer and limit to 1MiB. Otherwise we might
+// get range errors. We ignore those by crashing, but that reduces coverage,
+// hence, let's reduce the range-error rate.
+(function() {
+  // Math.min might be manipulated in test cases.
+  const min = Math.min;
+  const maxBytes = 1048576;
+  const mock = function(type) {
+    const maxLength = maxBytes / (type.BYTES_PER_ELEMENT || 1);
+    const handler = {
+      construct: function(target, args) {
+        if (args[0] && typeof args[0] != "object") {
+          // Length used as first argument.
+          args[0] = min(maxLength, Number(args[0]));
+        } else if (args[0] instanceof ArrayBuffer && args.length > 1) {
+          // Buffer used as first argument.
+          const buffer = args[0];
+          args[1] = Number(args[1]);
+          // Ensure offset is multiple of bytes per element.
+          args[1] = args[1] - (args[1] % type.BYTES_PER_ELEMENT);
+          // Limit offset to length of buffer.
+          args[1] = min(args[1], buffer.byteLength || 0);
+          if (args.length > 2) {
+            // If also length is given, limit it to the maximum that's possible
+            // given buffer and offset. Avoid NaN offset turning the length
+            // NaN, too.
+            const maxBytesLeft = buffer.byteLength - (args[1] || 0);
+            const maxLengthLeft = maxBytesLeft / type.BYTES_PER_ELEMENT;
+            args[2] = min(Number(args[2]), maxLengthLeft);
+          }
+        }
+        return new (Function.prototype.bind.apply(type, [null].concat(args)));
+      },
+    };
+    return new Proxy(type, handler);
+  }
+
+  ArrayBuffer = mock(ArrayBuffer);
+  SharedArrayBuffer = mock(SharedArrayBuffer);
+  Int8Array = mock(Int8Array);
+  Uint8Array = mock(Uint8Array);
+  Uint8ClampedArray = mock(Uint8ClampedArray);
+  Int16Array = mock(Int16Array);
+  Uint16Array = mock(Uint16Array);
+  Int32Array = mock(Int32Array);
+  Uint32Array = mock(Uint32Array);
+  BigInt64Array = mock(BigInt64Array);
+  BigUint64Array = mock(BigUint64Array);
+  Float16Array = mock(Float16Array);
+  Float32Array = mock(Float32Array);
+  Float64Array = mock(Float64Array);
+})();
+
+// Mock typed array set function and cap offset to not throw a range error.
+(function() {
+  // Math.min might be manipulated in test cases.
+  const min = Math.min;
+  const types = [
+    Int8Array,
+    Uint8Array,
+    Uint8ClampedArray,
+    Int16Array,
+    Uint16Array,
+    Int32Array,
+    Uint32Array,
+    BigInt64Array,
+    BigUint64Array,
+    Float16Array,
+    Float32Array,
+    Float64Array,
+  ];
+  for (const type of types) {
+    const set = type.prototype.set;
+    type.prototype.set = function(array, offset) {
+      if (Array.isArray(array)) {
+        offset = Number(offset);
+        offset = min(offset, this.length - array.length);
+      }
+      set.call(this, array, offset);
+    };
+  }
 })();
 
 // Mock Worker.
@@ -208,3 +330,12 @@ Atomics.waitAsync = function() {
   // immediately.
   return {'value': {'then': function (f) { f(); }}};
 }
+
+// Mock serializer API with no-ops.
+d8.serializer = {'serialize': (x) => x, 'deserialize': (x) => x}
+
+// Mock profiler API with no-ops.
+d8.profiler = {'setOnProfileEndListener': (x) => x, 'triggerSample': (x) => x}
+
+// Mock logging API with no-ops.
+d8.log = {'getAndStop': (x) => x}

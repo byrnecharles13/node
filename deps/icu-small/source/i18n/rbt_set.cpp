@@ -61,9 +61,9 @@ static UnicodeString& _formatInput(UnicodeString &appendTo,
         input.extractBetween(pos.start, pos.limit, c);
         input.extractBetween(pos.limit, pos.contextLimit, d);
         input.extractBetween(pos.contextLimit, input.length(), e);
-        appendTo.append(a).append((UChar)123/*{*/).append(b).
-            append((UChar)124/*|*/).append(c).append((UChar)124/*|*/).append(d).
-            append((UChar)125/*}*/).append(e);
+        appendTo.append(a).append((char16_t)123/*{*/).append(b).
+            append((char16_t)124/*|*/).append(c).append((char16_t)124/*|*/).append(d).
+            append((char16_t)125/*}*/).append(e);
     } else {
         appendTo.append("INVALID UTransPosition");
         //appendTo.append((UnicodeString)"INVALID UTransPosition {cs=" +
@@ -78,7 +78,7 @@ static UnicodeString& _formatInput(UnicodeString &appendTo,
 UnicodeString& _appendHex(uint32_t number,
                           int32_t digits,
                           UnicodeString& target) {
-    static const UChar digitString[] = {
+    static const char16_t digitString[] = {
         0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39,
         0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0
     };
@@ -114,8 +114,8 @@ inline void _debugOut(const char* msg, TransliterationRule* rule,
     UnicodeString buf(msg, "");
     if (rule) {
         UnicodeString r;
-        rule->toRule(r, TRUE);
-        buf.append((UChar)32).append(r);
+        rule->toRule(r, true);
+        buf.append((char16_t)32).append(r);
     }
     buf.append(UnicodeString(" => ", ""));
     UnicodeString* text = (UnicodeString*)&theText;
@@ -145,14 +145,14 @@ static void maskingError(const icu::TransliterationRule& rule1,
     parseError.line = parseError.offset = -1;
     
     // for pre-context
-    rule1.toRule(r, FALSE);
+    rule1.toRule(r, false);
     len = uprv_min(r.length(), U_PARSE_CONTEXT_LEN-1);
     r.extract(0, len, parseError.preContext);
     parseError.preContext[len] = 0;   
     
     //for post-context
     r.truncate(0);
-    rule2.toRule(r, FALSE);
+    rule2.toRule(r, false);
     len = uprv_min(r.length(), U_PARSE_CONTEXT_LEN-1);
     r.extract(0, len, parseError.postContext);
     parseError.postContext[len] = 0;   
@@ -193,11 +193,11 @@ TransliterationRuleSet::TransliterationRuleSet(const TransliterationRuleSet& oth
         len = other.ruleVector->size();
         for (i=0; i<len && U_SUCCESS(status); ++i) {
             LocalPointer<TransliterationRule> tempTranslitRule(
-                new TransliterationRule(*(TransliterationRule*)other.ruleVector->elementAt(i)), status);
+                new TransliterationRule(*static_cast<TransliterationRule*>(other.ruleVector->elementAt(i))), status);
             ruleVector->adoptElement(tempTranslitRule.orphan(), status);
         }
     }
-    if (other.rules != 0 && U_SUCCESS(status)) {
+    if (other.rules != nullptr && U_SUCCESS(status)) {
         UParseError p;
         freeze(p, status);
     }
@@ -225,7 +225,7 @@ void TransliterationRuleSet::setData(const TransliterationRuleData* d) {
  * Return the maximum context length.
  * @return the length of the longest preceding context.
  */
-int32_t TransliterationRuleSet::getMaximumContextLength(void) const {
+int32_t TransliterationRuleSet::getMaximumContextLength() const {
     return maxContextLength;
 }
 
@@ -253,7 +253,7 @@ void TransliterationRuleSet::addRule(TransliterationRule* adoptedRule,
     }
 
     uprv_free(rules);
-    rules = 0;
+    rules = nullptr;
 }
 
 /**
@@ -295,14 +295,14 @@ void TransliterationRuleSet::freeze(UParseError& parseError,UErrorCode& status) 
     /* Precompute the index values.  This saves a LOT of time.
      * Be careful not to call malloc(0).
      */
-    int16_t* indexValue = (int16_t*) uprv_malloc( sizeof(int16_t) * (n > 0 ? n : 1) );
-    /* test for NULL */
-    if (indexValue == 0) {
+    int16_t* indexValue = static_cast<int16_t*>(uprv_malloc(sizeof(int16_t) * (n > 0 ? n : 1)));
+    /* test for nullptr */
+    if (indexValue == nullptr) {
         status = U_MEMORY_ALLOCATION_ERROR;
         return;
     }
     for (j=0; j<n; ++j) {
-        TransliterationRule* r = (TransliterationRule*) ruleVector->elementAt(j);
+        TransliterationRule* r = static_cast<TransliterationRule*>(ruleVector->elementAt(j));
         indexValue[j] = r->getIndexValue();
     }
     for (x=0; x<256; ++x) {
@@ -317,8 +317,8 @@ void TransliterationRuleSet::freeze(UParseError& parseError,UErrorCode& status) 
                 // a set, and we must use the more time-consuming
                 // matchesIndexValue check.  In practice this happens
                 // rarely, so we seldom treat this code path.
-                TransliterationRule* r = (TransliterationRule*) ruleVector->elementAt(j);
-                if (r->matchesIndexValue((uint8_t)x)) {
+                TransliterationRule* r = static_cast<TransliterationRule*>(ruleVector->elementAt(j));
+                if (r->matchesIndexValue(static_cast<uint8_t>(x))) {
                     v.addElement(r, status);
                 }
             }
@@ -336,17 +336,17 @@ void TransliterationRuleSet::freeze(UParseError& parseError,UErrorCode& status) 
 
     /* You can't do malloc(0)! */
     if (v.size() == 0) {
-        rules = NULL;
+        rules = nullptr;
         return;
     }
-    rules = (TransliterationRule **)uprv_malloc(v.size() * sizeof(TransliterationRule *));
-    /* test for NULL */
-    if (rules == 0) {
+    rules = static_cast<TransliterationRule**>(uprv_malloc(v.size() * sizeof(TransliterationRule*)));
+    /* test for nullptr */
+    if (rules == nullptr) {
         status = U_MEMORY_ALLOCATION_ERROR;
         return;
     }
     for (j=0; j<v.size(); ++j) {
-        rules[j] = (TransliterationRule*) v.elementAt(j);
+        rules[j] = static_cast<TransliterationRule*>(v.elementAt(j));
     }
 
     // TODO Add error reporting that indicates the rules that
@@ -387,38 +387,38 @@ void TransliterationRuleSet::freeze(UParseError& parseError,UErrorCode& status) 
 
 /**
  * Transliterate the given text with the given UTransPosition
- * indices.  Return TRUE if the transliteration should continue
- * or FALSE if it should halt (because of a U_PARTIAL_MATCH match).
- * Note that FALSE is only ever returned if isIncremental is TRUE.
+ * indices.  Return true if the transliteration should continue
+ * or false if it should halt (because of a U_PARTIAL_MATCH match).
+ * Note that false is only ever returned if isIncremental is true.
  * @param text the text to be transliterated
  * @param pos the position indices, which will be updated
- * @param incremental if TRUE, assume new text may be inserted
- * at index.limit, and return FALSE if there is a partial match.
- * @return TRUE unless a U_PARTIAL_MATCH has been obtained,
+ * @param incremental if true, assume new text may be inserted
+ * at index.limit, and return false if there is a partial match.
+ * @return true unless a U_PARTIAL_MATCH has been obtained,
  * indicating that transliteration should stop until more text
  * arrives.
  */
 UBool TransliterationRuleSet::transliterate(Replaceable& text,
                                             UTransPosition& pos,
                                             UBool incremental) {
-    int16_t indexByte = (int16_t) (text.char32At(pos.start) & 0xFF);
+    int16_t indexByte = static_cast<int16_t>(text.char32At(pos.start) & 0xFF);
     for (int32_t i=index[indexByte]; i<index[indexByte+1]; ++i) {
         UMatchDegree m = rules[i]->matchAndReplace(text, pos, incremental);
         switch (m) {
         case U_MATCH:
             _debugOut("match", rules[i], text, pos);
-            return TRUE;
+            return true;
         case U_PARTIAL_MATCH:
             _debugOut("partial match", rules[i], text, pos);
-            return FALSE;
+            return false;
         default: /* Ram: added default to make GCC happy */
             break;
         }
     }
     // No match or partial match from any rule
     pos.start += U16_LENGTH(text.char32At(pos.start));
-    _debugOut("no match", NULL, text, pos);
-    return TRUE;
+    _debugOut("no match", nullptr, text, pos);
+    return true;
 }
 
 /**
@@ -431,10 +431,10 @@ UnicodeString& TransliterationRuleSet::toRules(UnicodeString& ruleSource,
     ruleSource.truncate(0);
     for (i=0; i<count; ++i) {
         if (i != 0) {
-            ruleSource.append((UChar) 0x000A /*\n*/);
+            ruleSource.append(static_cast<char16_t>(0x000A) /*\n*/);
         }
         TransliterationRule *r =
-            (TransliterationRule*) ruleVector->elementAt(i);
+            static_cast<TransliterationRule*>(ruleVector->elementAt(i));
         r->toRule(ruleSource, escapeUnprintable);
     }
     return ruleSource;
@@ -451,7 +451,7 @@ UnicodeSet& TransliterationRuleSet::getSourceTargetSet(UnicodeSet& result,
     int32_t count = ruleVector->size();
     for (int32_t i=0; i<count; ++i) {
         TransliterationRule* r =
-            (TransliterationRule*) ruleVector->elementAt(i);
+            static_cast<TransliterationRule*>(ruleVector->elementAt(i));
         if (getTarget) {
             r->addTargetSetTo(result);
         } else {

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright 2018 the V8 project authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -18,7 +18,7 @@ import sys
 CLANG_TIDY_WARNING = re.compile(r'(\/.*?)\ .*\[(.*)\]$')
 CLANG_TIDY_CMDLINE_OUT = re.compile(r'^clang-tidy.*\ .*|^\./\.\*')
 FILE_REGEXS = ['../src/*', '../test/*']
-HEADER_REGEX = ['\.\.\/src\/.*|\.\.\/include\/.*|\.\.\/test\/.*']
+HEADER_REGEX = [r'\.\.\/src\/.*|\.\.\/include\/.*|\.\.\/test\/.*']
 
 THREADS = multiprocessing.cpu_count()
 

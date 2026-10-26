@@ -1532,19 +1532,31 @@ typedef enum UDateFormatSymbolType {
      */
     UDAT_ZODIAC_NAMES_NARROW,
     
-#ifndef U_HIDE_DRAFT_API
     /**
      * The narrow quarter names, for example 1
-     * @draft ICU 70
+     * @stable ICU 70
      */
     UDAT_NARROW_QUARTERS,
     
     /**
      * The narrow standalone quarter names, for example 1
-     * @draft ICU 70
+     * @stable ICU 70
      */
-    UDAT_STANDALONE_NARROW_QUARTERS
-#endif // U_HIDE_DRAFT_API
+    UDAT_STANDALONE_NARROW_QUARTERS,
+
+#ifndef U_HIDE_DRAFT_API
+    /**
+     * Narrow AM/PM names. For example: "A" and "P".
+     * @draft ICU 78
+     */
+    UDAT_AM_PMS_NARROW,
+
+    /**
+     * Wide AM/PM names. For example: "Ante Meridiem" and "Post Meridiem".
+     * @draft ICU 78
+     */
+    UDAT_AM_PMS_WIDE,
+#endif  /* U_HIDE_DRAFT_API */
 } UDateFormatSymbolType;
 
 struct UDateFormatSymbols;

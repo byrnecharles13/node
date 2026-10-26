@@ -2,16 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --wasm-staging
-
 d8.file.execute('test/mjsunit/wasm/wasm-module-builder.js');
 
 const builder = new WasmModuleBuilder();
-builder.addMemory(16, 32, false, true);
+builder.addMemory(16, 32, true);
 builder.addType(makeSig([kWasmI32, kWasmI32, kWasmI32], [kWasmI32]));
 builder.addType(makeSig([], []));
 builder.setTableBounds(1, 1);
-builder.addActiveElementSegment(0, WasmInitExpr.I32Const(0), [0]);
+builder.addActiveElementSegment(0, wasmI32Const(0), [0]);
 // Generate function 1 (out of 1).
 builder.addFunction(undefined, 0 /* sig */)
   .addBodyWithEnd([

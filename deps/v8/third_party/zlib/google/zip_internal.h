@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,6 +6,8 @@
 #define THIRD_PARTY_ZLIB_GOOGLE_ZIP_INTERNAL_H_
 
 #include <string>
+
+#include <stdint.h>
 
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -79,8 +81,10 @@ bool ZipOpenNewFileInZip(zipFile zip_file,
 // PNG...) then the compression method is simply kStored.
 Compression GetCompressionMethod(const base::FilePath& path);
 
-const int kZipMaxPath = 256;
-const int kZipBufSize = 8192;
+// ZIP file names are up to 2^16 - 1, buffers should be 1 larger (for \0).
+inline constexpr int kZipMaxPath = UINT16_MAX + 1;
+
+inline constexpr int kZipBufSize = 8192;
 
 }  // namespace internal
 }  // namespace zip

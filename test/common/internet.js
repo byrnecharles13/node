@@ -25,7 +25,7 @@ const addresses = {
   // record not found. Use this to guarantee record not found.
   NOT_FOUND: 'come.on.fhqwhgads.test',
   // A host with SRV records registered
-  SRV_HOST: '_jabber._tcp.google.com',
+  SRV_HOST: '_caldav._tcp.google.com',
   // A host with PTR records registered
   PTR_HOST: '8.8.8.8.in-addr.arpa',
   // A host with NAPTR records registered
@@ -38,12 +38,18 @@ const addresses = {
   CNAME_HOST: 'blog.nodejs.org',
   // A host with NS records registered
   NS_HOST: 'nodejs.org',
+  // A host with TLSA records registered
+  TLSA_HOST: '_443._tcp.fedoraproject.org',
   // A host with TXT records registered
   TXT_HOST: 'nodejs.org',
   // An accessible IPv4 DNS server
   DNS4_SERVER: '8.8.8.8',
   // An accessible IPv4 DNS server
-  DNS6_SERVER: '2001:4860:4860::8888'
+  DNS6_SERVER: '2001:4860:4860::8888',
+  // A valid host with no records (except SOA)
+  NO_RECORD_HOST: 'void.example.com',
+  // A valid host with no TXT records, and a CNAME to a host with no TXT records
+  CNAME_TO_NO_TXT_HOST: 'www.microsoft.com',
 };
 
 for (const key of Object.keys(addresses)) {
@@ -54,5 +60,5 @@ for (const key of Object.keys(addresses)) {
 }
 
 module.exports = {
-  addresses
+  addresses,
 };

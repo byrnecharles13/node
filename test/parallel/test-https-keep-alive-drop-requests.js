@@ -10,16 +10,16 @@ const http = require('http');
 const net = require('net');
 const assert = require('assert');
 const tls = require('tls');
-const { readKey } = require('../common/fixtures');
+const fixtures = require('../common/fixtures');
 
 function request(socket) {
-  socket.write('GET / HTTP/1.1\r\nConnection: keep-alive\r\n\r\n\r\n');
+  socket.write('GET / HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n\r\n');
 }
 
 // https options
 const httpsOptions = {
-  key: readKey('agent1-key.pem'),
-  cert: readKey('agent1-cert.pem')
+  key: fixtures.readKey('agent1-key.pem'),
+  cert: fixtures.readKey('agent1-cert.pem')
 };
 
 const server = https.createServer(httpsOptions, common.mustCall((req, res) => {
@@ -39,11 +39,19 @@ server.listen(0, common.mustCall(() => {
       rejectUnauthorized: false
     },
     common.mustCall(() => {
+      let response = '';
       request(socket);
       request(socket);
       socket.on('error', common.mustNotCall());
-      socket.on('data', common.mustCallAtLeast());
-      socket.on('close', common.mustCall());
+      socket.on('data', common.mustCallAtLeast((chunk) => {
+        response += chunk;
+        if (response.includes('HTTP/1.1 503 Service Unavailable'))
+          socket.end();
+      }));
+      socket.on('close', common.mustCall(() => {
+        assert.match(response, /HTTP\/1\.1 200 OK/);
+        assert.match(response, /HTTP\/1\.1 503 Service Unavailable/);
+      }));
     })
   );
 }));

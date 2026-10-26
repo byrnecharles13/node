@@ -11,9 +11,9 @@ const cluster = require('cluster');
 if (cluster.isWorker) {
   // Make the worker run something
   const http = require('http');
-  const server = http.Server(() => { });
+  const server = new http.Server(() => { });
 
-  server.once('listening', common.mustCall(() => { }));
+  server.once('listening', common.mustCall());
   server.listen(0, '127.0.0.1');
 
 } else if (cluster.isMaster) {
@@ -45,5 +45,5 @@ if (cluster.isWorker) {
   }, 1));
 
   // Check if the cluster was killed as well
-  cluster.on('exit', common.mustCall(() => {}, 1));
+  cluster.on('exit', common.mustCall(1));
 }

@@ -1,3 +1,5 @@
+// Flags: --expose-internals --no-warnings
+
 'use strict';
 
 const common = require('../common');
@@ -9,14 +11,14 @@ const { checkInvocations } = require('./hook-checks');
 const hooks = initHooks();
 hooks.enable();
 
-const { HTTPParser } = require('_http_common');
+const { HTTPParser } = require('internal/http/common');
 
 const REQUEST = HTTPParser.REQUEST;
 
 const kOnHeadersComplete = HTTPParser.kOnHeadersComplete | 0;
 
 const request = Buffer.from(
-  'GET /hello HTTP/1.1\r\n\r\n'
+  'GET /hello HTTP/1.1\r\n\r\n',
 );
 
 const parser = new HTTPParser();

@@ -7,18 +7,20 @@ const {
   PerformanceObserver,
   PerformanceEntry,
   PerformanceResourceTiming,
-  performance: {
-    clearResourceTimings,
-    markResourceTiming,
-  },
+  performance,
 } = require('perf_hooks');
 
 assert(PerformanceObserver);
 assert(PerformanceEntry);
 assert.throws(() => new PerformanceEntry(), { code: 'ERR_ILLEGAL_CONSTRUCTOR' });
 assert(PerformanceResourceTiming);
-assert(clearResourceTimings);
-assert(markResourceTiming);
+assert(performance.clearResourceTimings);
+assert(performance.markResourceTiming);
+
+assert.deepStrictEqual(
+  Object.getOwnPropertyDescriptor(PerformanceResourceTiming.prototype, Symbol.toStringTag),
+  { configurable: true, enumerable: false, value: 'PerformanceResourceTiming', writable: false },
+);
 
 function createTimingInfo({
   startTime = 0,
@@ -34,18 +36,12 @@ function createTimingInfo({
   finalConnectionTimingInfo = null
 }) {
   if (finalConnectionTimingInfo !== null) {
-    finalConnectionTimingInfo.domainLookupStartTime =
-        finalConnectionTimingInfo.domainLookupStartTime || 0;
-    finalConnectionTimingInfo.domainLookupEndTime =
-        finalConnectionTimingInfo.domainLookupEndTime || 0;
-    finalConnectionTimingInfo.connectionStartTime =
-        finalConnectionTimingInfo.connectionStartTime || 0;
-    finalConnectionTimingInfo.connectionEndTime =
-        finalConnectionTimingInfo.connectionEndTime || 0;
-    finalConnectionTimingInfo.secureConnectionStartTime =
-        finalConnectionTimingInfo.secureConnectionStartTime || 0;
-    finalConnectionTimingInfo.ALPNNegotiatedProtocol =
-        finalConnectionTimingInfo.ALPNNegotiatedProtocol || [];
+    finalConnectionTimingInfo.domainLookupStartTime ||= 0;
+    finalConnectionTimingInfo.domainLookupEndTime ||= 0;
+    finalConnectionTimingInfo.connectionStartTime ||= 0;
+    finalConnectionTimingInfo.connectionEndTime ||= 0;
+    finalConnectionTimingInfo.secureConnectionStartTime ||= 0;
+    finalConnectionTimingInfo.ALPNNegotiatedProtocol ||= [];
   }
   return {
     startTime,
@@ -78,12 +74,15 @@ function createTimingInfo({
   const requestedUrl = 'http://localhost:8080';
   const cacheMode = 'local';
   const initiatorType = 'fetch';
-  const resource = markResourceTiming(
+  const resource = performance.markResourceTiming(
     timingInfo,
     requestedUrl,
     initiatorType,
     customGlobal,
     cacheMode,
+    {},
+    200,
+    '',
   );
 
   assert(resource instanceof PerformanceEntry);
@@ -107,7 +106,7 @@ function createTimingInfo({
     assert(entries[0] instanceof PerformanceResourceTiming);
   }
 
-  clearResourceTimings();
+  performance.clearResourceTimings();
   assert.strictEqual(performance.getEntries().length, 0);
 }
 
@@ -120,12 +119,15 @@ function createTimingInfo({
   const requestedUrl = 'http://localhost:8080';
   const cacheMode = 'local';
   const initiatorType = 'fetch';
-  const resource = markResourceTiming(
+  const resource = performance.markResourceTiming(
     timingInfo,
     requestedUrl,
     initiatorType,
     customGlobal,
     cacheMode,
+    {},
+    200,
+    '',
   );
 
   assert(resource instanceof PerformanceEntry);
@@ -153,6 +155,8 @@ function createTimingInfo({
   assert.strictEqual(resource.encodedBodySize, 0);
   assert.strictEqual(resource.decodedBodySize, 0);
   assert.strictEqual(resource.transferSize, 0);
+  assert.strictEqual(resource.deliveryType, '');
+  assert.strictEqual(resource.responseStatus, 200);
   assert.deepStrictEqual(resource.toJSON(), {
     name: requestedUrl,
     entryType: 'resource',
@@ -170,11 +174,18 @@ function createTimingInfo({
     connectEnd: 0,
     secureConnectionStart: 0,
     requestStart: 0,
+    finalResponseHeadersStart: 0,
+    firstInterimResponseStart: 0,
     responseStart: 0,
     responseEnd: 0,
     transferSize: 0,
     encodedBodySize: 0,
     decodedBodySize: 0,
+    responseStatus: 200,
+    deliveryType: '',
+    renderBlockingStatus: 'non-blocking',
+    contentType: '',
+    contentEncoding: '',
   });
   assert.strictEqual(util.inspect(performance.getEntries()), `[
   PerformanceResourceTiming {
@@ -194,11 +205,18 @@ function createTimingInfo({
     connectEnd: 0,
     secureConnectionStart: 0,
     requestStart: 0,
+    finalResponseHeadersStart: 0,
+    firstInterimResponseStart: 0,
     responseStart: 0,
     responseEnd: 0,
     transferSize: 0,
     encodedBodySize: 0,
-    decodedBodySize: 0
+    decodedBodySize: 0,
+    deliveryType: '',
+    responseStatus: 200,
+    renderBlockingStatus: 'non-blocking',
+    contentType: '',
+    contentEncoding: ''
   }
 ]`);
   assert.strictEqual(util.inspect(resource), `PerformanceResourceTiming {
@@ -218,17 +236,24 @@ function createTimingInfo({
   connectEnd: 0,
   secureConnectionStart: 0,
   requestStart: 0,
+  finalResponseHeadersStart: 0,
+  firstInterimResponseStart: 0,
   responseStart: 0,
   responseEnd: 0,
   transferSize: 0,
   encodedBodySize: 0,
-  decodedBodySize: 0
+  decodedBodySize: 0,
+  deliveryType: '',
+  responseStatus: 200,
+  renderBlockingStatus: 'non-blocking',
+  contentType: '',
+  contentEncoding: ''
 }`);
 
   assert(resource instanceof PerformanceEntry);
   assert(resource instanceof PerformanceResourceTiming);
 
-  clearResourceTimings();
+  performance.clearResourceTimings();
   const entries = performance.getEntries();
   assert.strictEqual(entries.length, 0);
 }
@@ -244,12 +269,15 @@ function createTimingInfo({
   const requestedUrl = 'http://localhost:8080';
   const cacheMode = '';
   const initiatorType = 'fetch';
-  const resource = markResourceTiming(
+  const resource = performance.markResourceTiming(
     timingInfo,
     requestedUrl,
     initiatorType,
     customGlobal,
     cacheMode,
+    {},
+    200,
+    '',
   );
 
   assert(resource instanceof PerformanceEntry);
@@ -267,7 +295,7 @@ function createTimingInfo({
   assert(resource instanceof PerformanceEntry);
   assert(resource instanceof PerformanceResourceTiming);
 
-  clearResourceTimings();
+  performance.clearResourceTimings();
   const entries = performance.getEntries();
   assert.strictEqual(entries.length, 0);
 }
@@ -299,18 +327,21 @@ function createTimingInfo({
   const requestedUrl = 'http://localhost:8080';
   const cacheMode = 'local';
   const initiatorType = 'fetch';
-  const resource = markResourceTiming(
+  const resource = performance.markResourceTiming(
     timingInfo,
     requestedUrl,
     initiatorType,
     customGlobal,
     cacheMode,
+    {},
+    200,
+    ''
   );
 
   assert(resource instanceof PerformanceEntry);
   assert(resource instanceof PerformanceResourceTiming);
 
-  clearResourceTimings();
+  performance.clearResourceTimings();
   const entries = performance.getEntries();
   assert.strictEqual(entries.length, 0);
 }

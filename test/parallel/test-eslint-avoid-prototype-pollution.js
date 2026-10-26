@@ -7,13 +7,11 @@ if ((!common.hasCrypto) || (!common.hasIntl)) {
 
 common.skipIfEslintMissing();
 
-const RuleTester = require('../../tools/node_modules/eslint').RuleTester;
+const RuleTester = require('../../tools/eslint/node_modules/eslint').RuleTester;
 const rule = require('../../tools/eslint-rules/avoid-prototype-pollution');
 
-new RuleTester({
-  parserOptions: { ecmaVersion: 2022 },
-})
-  .run('property-descriptor-no-prototype-pollution', rule, {
+new RuleTester()
+  .run('avoid-prototype-pollution', rule, {
     valid: [
       'ObjectDefineProperties({}, {})',
       'ObjectCreate(null, {})',
@@ -45,6 +43,17 @@ new RuleTester({
       'ReflectDefineProperty({}, "key", { "__proto__": null })',
       'ObjectDefineProperty({}, "key", { \'__proto__\': null })',
       'ReflectDefineProperty({}, "key", { \'__proto__\': null })',
+      'async function myFn() { return { __proto__: null } }',
+      'async function myFn() { function myFn() { return {} } return { __proto__: null } }',
+      'const myFn = async function myFn() { return { __proto__: null } }',
+      'const myFn = async function () { return { __proto__: null } }',
+      'const myFn = async () => { return { __proto__: null } }',
+      'const myFn = async () => ({ __proto__: null })',
+      'function myFn() { return {} }',
+      'const myFn = function myFn() { return {} }',
+      'const myFn = function () { return {} }',
+      'const myFn = () => { return {} }',
+      'const myFn = () => ({})',
       'StringPrototypeReplace("some string", "some string", "some replacement")',
       'StringPrototypeReplaceAll("some string", "some string", "some replacement")',
       'StringPrototypeSplit("some string", "some string")',
@@ -52,6 +61,20 @@ new RuleTester({
       'new Proxy({}, someFactory())',
       'new Proxy({}, { __proto__: null })',
       'new Proxy({}, { __proto__: null, ...{} })',
+      'async function name(){return await SafePromiseAll([])}',
+      'async function name(){const val = await SafePromiseAll([])}',
+      'async function name(options = kEmptyObject){}',
+      'function name(options = kEmptyObject){}',
+      'function name(options = { __proto__: ObjectPrototype }){}',
+      'function name(options = { __proto__: null }){}',
+      'new class { name(options = kEmptyObject){} }',
+      'const name = (options = kEmptyObject) => {}',
+      'async function name(options = { __proto__: null, key: 1 }){}',
+      'const name = ({ destr } = { destr: 1 }) => {}',
+      'function name({ destr } = kEmptyObject){}',
+      'function name({ [Symbol.match]: m } = kEmptyObject){}',
+      'function name({ [Symbol.match]: m } = { __proto__: null, [Symbol.match]: 1 }){}',
+      'function name({ [Symbol.match]: m, c } = { __proto__: null, c: 1 }){}',
     ],
     invalid: [
       {
@@ -112,19 +135,46 @@ new RuleTester({
       },
       {
         code: 'ObjectDefineProperty({}, "key", ObjectGetOwnPropertyDescriptor({}, "key"))',
-        errors: [{ message: /prototype pollution/ }],
+        errors: [{
+          message: /prototype pollution/,
+          suggestions: [{
+            desc: 'Wrap the property descriptor in a null-prototype object',
+            output: 'ObjectDefineProperty({}, "key", { __proto__: null,...ObjectGetOwnPropertyDescriptor({}, "key") })',
+          }],
+        }],
       },
       {
         code: 'ReflectDefineProperty({}, "key", ObjectGetOwnPropertyDescriptor({}, "key"))',
-        errors: [{ message: /prototype pollution/ }],
+        errors: [{
+          message: /prototype pollution/,
+          suggestions: [{
+            desc: 'Wrap the property descriptor in a null-prototype object',
+            output:
+              'ReflectDefineProperty({}, "key", { __proto__: null,...ObjectGetOwnPropertyDescriptor({}, "key") })',
+          }],
+        }],
       },
       {
         code: 'ObjectDefineProperty({}, "key", ReflectGetOwnPropertyDescriptor({}, "key"))',
-        errors: [{ message: /prototype pollution/ }],
+        errors: [{
+          message: /prototype pollution/,
+          suggestions: [{
+            desc: 'Wrap the property descriptor in a null-prototype object',
+            output:
+              'ObjectDefineProperty({}, "key", { __proto__: null,...ReflectGetOwnPropertyDescriptor({}, "key") })',
+          }],
+        }],
       },
       {
         code: 'ReflectDefineProperty({}, "key", ReflectGetOwnPropertyDescriptor({}, "key"))',
-        errors: [{ message: /prototype pollution/ }],
+        errors: [{
+          message: /prototype pollution/,
+          suggestions: [{
+            desc: 'Wrap the property descriptor in a null-prototype object',
+            output:
+              'ReflectDefineProperty({}, "key", { __proto__: null,...ReflectGetOwnPropertyDescriptor({}, "key") })',
+          }],
+        }],
       },
       {
         code: 'ObjectDefineProperty({}, "key", { __proto__: Object.prototype })',
@@ -151,8 +201,42 @@ new RuleTester({
         errors: [{ message: /null-prototype/ }],
       },
       {
+        code: 'async function myFn(){ return {} }',
+        errors: [{ message: /null-prototype/ }],
+      },
+      {
+        code: 'async function myFn(){ async function someOtherFn() { return { __proto__: null } } return {} }',
+        errors: [{ message: /null-prototype/ }],
+      },
+      {
+        code: 'async function myFn(){ if (true) { return {} } return { __proto__: null } }',
+        errors: [{ message: /null-prototype/ }],
+      },
+      {
+        code: 'const myFn = async function myFn(){ return {} }',
+        errors: [{ message: /null-prototype/ }],
+      },
+      {
+        code: 'const myFn = async function (){ return {} }',
+        errors: [{ message: /null-prototype/ }],
+      },
+      {
+        code: 'const myFn = async () => { return {} }',
+        errors: [{ message: /null-prototype/ }],
+      },
+      {
+        code: 'const myFn = async () => ({})',
+        errors: [{ message: /null-prototype/ }],
+      },
+      {
         code: 'RegExpPrototypeTest(/some regex/, "some string")',
-        errors: [{ message: /looks up the "exec" property/ }],
+        errors: [{
+          message: /looks up the "exec" property/,
+          suggestions: [{
+            desc: 'Use RegexpPrototypeExec instead',
+            output: 'RegExpPrototypeExec(/some regex/, "some string") !== null',
+          }],
+        }],
       },
       {
         code: 'RegExpPrototypeSymbolMatch(/some regex/, "some string")',
@@ -164,7 +248,7 @@ new RuleTester({
       },
       {
         code: 'RegExpPrototypeSymbolSearch(/some regex/, "some string")',
-        errors: [{ message: /looks up the "exec" property/ }],
+        errors: [{ message: /SafeStringPrototypeSearch/ }],
       },
       {
         code: 'StringPrototypeMatch("some string", /some regex/)',
@@ -204,7 +288,7 @@ new RuleTester({
       },
       {
         code: 'StringPrototypeSearch("some string", /some regex/)',
-        errors: [{ message: /looks up the Symbol\.search property/ }],
+        errors: [{ message: /SafeStringPrototypeSearch/ }],
       },
       {
         code: 'StringPrototypeSplit("some string", /some regex/)',
@@ -235,6 +319,14 @@ new RuleTester({
         errors: [{ message: /\bSafePromiseAll\b/ }]
       },
       {
+        code: 'async function fn(){await SafePromiseAll([])}',
+        errors: [{ message: /\bSafePromiseAllReturnVoid\b/ }]
+      },
+      {
+        code: 'async function fn(){await SafePromiseAllSettled([])}',
+        errors: [{ message: /\bSafePromiseAllSettledReturnVoid\b/ }]
+      },
+      {
         code: 'PromiseAllSettled([])',
         errors: [{ message: /\bSafePromiseAllSettled\b/ }]
       },
@@ -245,6 +337,58 @@ new RuleTester({
       {
         code: 'PromiseRace([])',
         errors: [{ message: /\bSafePromiseRace\b/ }]
+      },
+      {
+        code: 'ArrayPrototypeConcat([])',
+        errors: [{ message: /\bisConcatSpreadable\b/ }]
+      },
+      {
+        code: 'function name(options = {}) {}',
+        errors: [{ message: /\bkEmptyObject\b/ }]
+      },
+      {
+        code: 'async function name(options = { key: 1 }) {}',
+        errors: [{ message: /\b__proto__: null\b/ }]
+      },
+      {
+        code: 'new class { name(options = {}) {} }',
+        errors: [{ message: /\bkEmptyObject\b/ }]
+      },
+      {
+        code: 'new class { async name(options = {}) {} }',
+        errors: [{ message: /\bkEmptyObject\b/ }]
+      },
+      {
+        code: 'const name = (options = {}) => {}',
+        errors: [{ message: /\bkEmptyObject\b/ }]
+      },
+      {
+        code: 'const name = async (options = {}) => {}',
+        errors: [{ message: /\bkEmptyObject\b/ }]
+      },
+      {
+        code: 'function name({ destr } = {}) {}',
+        errors: [{ message: /\bkEmptyObject\b/ }]
+      },
+      {
+        code: 'async function name({ destr } = {}) {}',
+        errors: [{ message: /\bkEmptyObject\b/ }]
+      },
+      {
+        code: 'new class { name({ destr } = {}) {} }',
+        errors: [{ message: /\bkEmptyObject\b/ }]
+      },
+      {
+        code: 'new class { async name({ destr } = {}) {} }',
+        errors: [{ message: /\bkEmptyObject\b/ }]
+      },
+      {
+        code: 'const name = ({ destr } = {}) => {}',
+        errors: [{ message: /\bkEmptyObject\b/ }]
+      },
+      {
+        code: 'const name = async ({ destr } = {}) => {}',
+        errors: [{ message: /\bkEmptyObject\b/ }]
       },
     ]
   });

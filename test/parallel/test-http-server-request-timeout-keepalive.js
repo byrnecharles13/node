@@ -12,7 +12,7 @@ const { connect } = require('net');
 
 function performRequestWithDelay(client, firstDelay, secondDelay, closeAfter) {
   client.resume();
-  client.write('GET / HTTP/1.1\r\n');
+  client.write('GET / HTTP/1.1\r\nHost: example.com\r\n');
 
   setTimeout(() => {
     client.write('Connection: ');
@@ -79,9 +79,7 @@ server.listen(0, common.mustCall(() => {
     assert.strictEqual(second, true);
     assert.strictEqual(
       response,
-      // Empty because of https://github.com/nodejs/node/commit/e8d7fedf7cad6e612e4f2e0456e359af57608ac7
-      // 'HTTP/1.1 408 Request Timeout\r\nConnection: close\r\n\r\n'
-      ''
+      'HTTP/1.1 408 Request Timeout\r\nConnection: close\r\n\r\n'
     );
     server.close();
   });

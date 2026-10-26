@@ -13,6 +13,23 @@ namespace compiler {
 
 bool InstructionScheduler::SchedulerSupported() { return true; }
 
+ResourceAllocation InstructionScheduler::GetResourceTable() {
+  std::array units = std::to_array<ResourceAllocation::TableEntry>({
+      {ArchInstResource::kFetch, 1},
+      {ArchInstResource::kIntSingle, 1},
+      {ArchInstResource::kIntMulti, 1},
+      {ArchInstResource::kFP, 1},
+      {ArchInstResource::kLoad, 1},
+      {ArchInstResource::kStore, 1},
+  });
+  return ResourceAllocation(units);
+}
+
+ArchInstResource InstructionScheduler::GetInstructionResource(
+    const Instruction* instr) {
+  return ArchInstResource::kIntSingle;
+}
+
 int InstructionScheduler::GetTargetInstructionFlags(
     const Instruction* instr) const {
   switch (instr->arch_opcode()) {
@@ -73,6 +90,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32Float64ExtractHighWord32:
     case kIA32Float64InsertLowWord32:
     case kIA32Float64InsertHighWord32:
+    case kIA32Float64FromWord32Pair:
     case kIA32Float64LoadLowWord32:
     case kIA32Float64SilenceNaN:
     case kFloat32Add:
@@ -89,6 +107,8 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kFloat32Neg:
     case kIA32BitcastFI:
     case kIA32BitcastIF:
+    case kIA32Blendvpd:
+    case kIA32Blendvps:
     case kIA32Pblendvb:
     case kIA32Cvttps2dq:
     case kIA32Cvttpd2dq:
@@ -145,8 +165,6 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32F32x4SConvertI32x4:
     case kIA32F32x4UConvertI32x4:
     case kIA32F32x4Sqrt:
-    case kIA32F32x4RecipApprox:
-    case kIA32F32x4RecipSqrtApprox:
     case kIA32F32x4Add:
     case kIA32F32x4Sub:
     case kIA32F32x4Mul:
@@ -194,6 +212,7 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32I32x4Abs:
     case kIA32I32x4BitMask:
     case kIA32I32x4DotI16x8S:
+    case kIA32I32x4DotI8x16I7x16AddS:
     case kIA32I32x4ExtMulLowI16x8S:
     case kIA32I32x4ExtMulHighI16x8S:
     case kIA32I32x4ExtMulLowI16x8U:
@@ -245,6 +264,8 @@ int InstructionScheduler::GetTargetInstructionFlags(
     case kIA32I16x8ExtAddPairwiseI8x16S:
     case kIA32I16x8ExtAddPairwiseI8x16U:
     case kIA32I16x8Q15MulRSatS:
+    case kIA32I16x8RelaxedQ15MulRS:
+    case kIA32I16x8DotI8x16I7x16S:
     case kIA32I8x16Splat:
     case kIA32I8x16ExtractLaneS:
     case kIA32Pinsrb:

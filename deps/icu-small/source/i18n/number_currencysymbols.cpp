@@ -108,6 +108,10 @@ UnicodeString CurrencySymbols::getPluralName(StandardPlural::Form plural, UError
     }
 }
 
+bool CurrencySymbols::hasEmptyCurrencySymbol() const {
+    return !fCurrencySymbol.isBogus() && fCurrencySymbol.isEmpty();
+}
+
 
 CurrencyUnit
 icu::number::impl::resolveCurrency(const DecimalFormatProperties& properties, const Locale& locale,
@@ -122,7 +126,7 @@ icu::number::impl::resolveCurrency(const DecimalFormatProperties& properties, co
             return CurrencyUnit(buf, status);
         } else {
             // Default currency (XXX)
-            return CurrencyUnit();
+            return {};
         }
     }
 }

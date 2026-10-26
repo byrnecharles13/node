@@ -15,10 +15,10 @@
 #include "include/cppgc/type-traits.h"
 #include "src/base/logging.h"
 #include "src/base/platform/platform.h"
-#include "src/heap/cppgc/globals.h"
-#include "src/heap/cppgc/heap.h"
-#include "src/heap/cppgc/liveness-broker.h"
-#include "src/heap/cppgc/visitor.h"
+#include "src/heap/cppgc-internal/globals.h"
+#include "src/heap/cppgc-internal/heap.h"
+#include "src/heap/cppgc-internal/liveness-broker.h"
+#include "src/heap/cppgc-internal/visitor.h"
 #include "test/unittests/heap/cppgc/tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -84,9 +84,9 @@ using LocalizedCrossThreadPersistent = internal::BasicCrossThreadPersistent<
     T, internal::StrongCrossThreadPersistentPolicy,
     internal::KeepLocationPolicy, internal::DisabledCheckingPolicy>;
 
-class RootVisitor final : public VisitorBase {
+class TestRootVisitor final : public RootVisitorBase {
  public:
-  RootVisitor() = default;
+  TestRootVisitor() = default;
 
   const auto& WeakCallbacks() const { return weak_callbacks_; }
 
@@ -99,12 +99,11 @@ class RootVisitor final : public VisitorBase {
   }
 
  protected:
-  void VisitRoot(const void* t, TraceDescriptor desc,
-                 const SourceLocation&) final {
-    desc.callback(this, desc.base_object_payload);
+  void VisitRoot(const void* t, TraceDescriptor desc, SourceLocation) final {
+    desc.callback(nullptr, desc.base_object_payload);
   }
   void VisitWeakRoot(const void*, TraceDescriptor, WeakCallback callback,
-                     const void* object, const SourceLocation&) final {
+                     const void* object, SourceLocation) final {
     weak_callbacks_.emplace_back(callback, object);
   }
 
@@ -746,8 +745,8 @@ TEST_F(PersistentTest, TraceStrong) {
   }
   {
     GCed::trace_call_count = 0;
-    RootVisitor v;
-    GetRegion<Persistent>(heap).Trace(&v);
+    TestRootVisitor v;
+    GetRegion<Persistent>(heap).Iterate(v);
     EXPECT_EQ(kItems, GCed::trace_call_count);
     EXPECT_EQ(kItems, GetRegion<Persistent>(heap).NodesInUse());
   }
@@ -757,16 +756,16 @@ TEST_F(PersistentTest, TraceStrong) {
     vec[kItems / 2].Clear();
     vec[kItems / 4].Clear();
     vec[kItems - 1].Clear();
-    RootVisitor v;
-    GetRegion<Persistent>(heap).Trace(&v);
+    TestRootVisitor v;
+    GetRegion<Persistent>(heap).Iterate(v);
     EXPECT_EQ(kItems - 4, GCed::trace_call_count);
     EXPECT_EQ(kItems - 4, GetRegion<Persistent>(heap).NodesInUse());
   }
   {
     GCed::trace_call_count = 0;
     vec.clear();
-    RootVisitor v;
-    GetRegion<Persistent>(heap).Trace(&v);
+    TestRootVisitor v;
+    GetRegion<Persistent>(heap).Iterate(v);
     EXPECT_EQ(0u, GCed::trace_call_count);
     EXPECT_EQ(0u, GetRegion<Persistent>(heap).NodesInUse());
   }
@@ -780,8 +779,8 @@ TEST_F(PersistentTest, TraceWeak) {
     p = MakeGarbageCollected<GCed>(GetAllocationHandle());
   }
   GCed::trace_call_count = 0;
-  RootVisitor v;
-  GetRegion<WeakPersistent>(heap).Trace(&v);
+  TestRootVisitor v;
+  GetRegion<WeakPersistent>(heap).Iterate(v);
   const auto& callbacks = v.WeakCallbacks();
   EXPECT_EQ(kItems, callbacks.size());
   EXPECT_EQ(kItems, GetRegion<WeakPersistent>(heap).NodesInUse());
@@ -816,7 +815,6 @@ TEST_F(PersistentTest, ClearOnHeapDestruction) {
   EXPECT_EQ(kSentinelPointer, weak_persistent_sentinel);
 }
 
-#if CPPGC_SUPPORTS_SOURCE_LOCATION
 TEST_F(PersistentTest, LocalizedPersistent) {
   GCed* gced = MakeGarbageCollected<GCed>(GetAllocationHandle());
   {
@@ -923,25 +921,23 @@ TEST_F(PersistentTest, LocalizedPersistent) {
   }
 }
 
-#endif
-
 namespace {
 
-class ExpectingLocationVisitor final : public VisitorBase {
+class ExpectingLocationVisitor final : public RootVisitorBase {
  public:
-  explicit ExpectingLocationVisitor(const SourceLocation& expected_location)
+  explicit ExpectingLocationVisitor(SourceLocation expected_location)
       : expected_loc_(expected_location) {}
 
  protected:
   void VisitRoot(const void* t, TraceDescriptor desc,
-                 const SourceLocation& loc) final {
+                 SourceLocation loc) final {
     EXPECT_STREQ(expected_loc_.Function(), loc.Function());
     EXPECT_STREQ(expected_loc_.FileName(), loc.FileName());
     EXPECT_EQ(expected_loc_.Line(), loc.Line());
   }
 
  private:
-  const SourceLocation& expected_loc_;
+  SourceLocation expected_loc_;
 };
 
 }  // namespace
@@ -949,18 +945,14 @@ class ExpectingLocationVisitor final : public VisitorBase {
 TEST_F(PersistentTest, PersistentTraceLocation) {
   GCed* gced = MakeGarbageCollected<GCed>(GetAllocationHandle());
   {
-#if CPPGC_SUPPORTS_SOURCE_LOCATION
-    // Baseline for creating expected location which has a different line
-    // number.
-    const auto loc = SourceLocation::Current();
-    const auto expected_loc =
-        SourceLocation::Current(loc.Function(), loc.FileName(), loc.Line() + 6);
-#else   // !CCPPGC_SUPPORTS_SOURCE_LOCATION
-    const SourceLocation expected_loc;
-#endif  // !CCPPGC_SUPPORTS_SOURCE_LOCATION
-    LocalizedPersistent<GCed> p = gced;
+    // Make sure that the source location is on the same line as the persistent,
+    // by disabling formatting.
+    // clang-format off
+    // NOLINTNEXTLINE
+    LocalizedPersistent<GCed> p = gced; auto expected_loc = SourceLocation::Current();
+    // clang-format on
     ExpectingLocationVisitor visitor(expected_loc);
-    visitor.TraceRootForTesting(p, p.Location());
+    visitor.Trace(p);
   }
 }
 

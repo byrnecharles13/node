@@ -6,13 +6,15 @@ const { readFile } = require('fs');
 const {
   createHook,
   executionAsyncResource,
-  AsyncResource
+  AsyncResource,
 } = require('async_hooks');
 
 // Ignore any asyncIds created before our hook is active.
 let firstSeenAsyncId = -1;
 const idResMap = new Map();
-const numExpectedCalls = 5;
+// The AsyncResource below plus at least one FSREQCALLBACK from readFile()
+// (a small file is read in a single request).
+const numExpectedCalls = 2;
 
 createHook({
   init: common.mustCallAtLeast(
@@ -32,7 +34,7 @@ createHook({
     if (asyncId >= firstSeenAsyncId) {
       afterHook(asyncId);
     }
-  }
+  },
 }).enable();
 
 const beforeHook = common.mustCallAtLeast(

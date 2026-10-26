@@ -1,27 +1,31 @@
 'use strict';
-require('../common');
+
+const assert = require('assert');
+const { basename } = require('path');
 const { WPTRunner } = require('../common/wpt');
 
 const runner = new WPTRunner('user-timing');
 
-// Needed to access to DOMException.
-runner.setFlags(['--expose-internals']);
+runner.pretendGlobalThisAs('Window');
 
-runner.setInitScript(`
-  const {
-    PerformanceMark,
-    PerformanceMeasure,
-    PerformanceObserver,
-    performance,
-  } = require('perf_hooks');
-  global.PerformanceMark = performance;
-  global.PerformanceMeasure = performance;
-  global.PerformanceObserver = PerformanceObserver;
-  global.performance = performance;
+runner.setScriptModifier((script) => {
+  if (basename(script.filename) !== 'mark.any.js') return;
 
-  const { internalBinding } = require('internal/test/binding');
-  const { DOMException } = internalBinding('messaging');
-  global.DOMException = DOMException;
-`);
+  // A scheduling pause between mark() and now() can exceed any fixed
+  // tolerance. Check that the mark falls between the surrounding clock
+  // readings instead, leaving the upstream fixture unchanged.
+  // https://github.com/nodejs/node/issues/40449
+  function replace(from, to) {
+    assert(script.code.includes(from), `Unexpected contents of ${script.filename}`);
+    script.code = script.code.replaceAll(from, to);
+  }
+
+  replace('var expectedTimes = new Array();',
+          'var beforeTimes = [];\nvar expectedTimes = new Array();');
+  replace('self.performance.mark("mark");',
+          'beforeTimes.push(self.performance.now());\n    self.performance.mark("mark");');
+  replace('assert_approx_equals(entries[index].startTime, expectedTimes[index], testThreshold);',
+          'assert_between_inclusive(entries[index].startTime, beforeTimes[index], expectedTimes[index]);');
+});
 
 runner.runJsTests();

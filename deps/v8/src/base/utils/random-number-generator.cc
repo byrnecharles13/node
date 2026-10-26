@@ -112,14 +112,12 @@ int RandomNumberGenerator::NextInt(int max) {
 
 
 double RandomNumberGenerator::NextDouble() {
-  XorShift128(&state0_, &state1_);
-  return ToDouble(state0_);
+  return ToDouble(XorShift128(&state0_, &state1_));
 }
 
 
 int64_t RandomNumberGenerator::NextInt64() {
-  XorShift128(&state0_, &state1_);
-  return bit_cast<int64_t>(state0_ + state1_);
+  return base::bit_cast<int64_t>(XorShift128(&state0_, &state1_));
 }
 
 
@@ -212,14 +210,14 @@ std::vector<uint64_t> RandomNumberGenerator::NextSampleSlow(
 int RandomNumberGenerator::Next(int bits) {
   DCHECK_LT(0, bits);
   DCHECK_GE(32, bits);
-  XorShift128(&state0_, &state1_);
-  return static_cast<int>((state0_ + state1_) >> (64 - bits));
+  uint64_t random = XorShift128(&state0_, &state1_);
+  return static_cast<int>(random >> (64 - bits));
 }
 
 
 void RandomNumberGenerator::SetSeed(int64_t seed) {
   initial_seed_ = seed;
-  state0_ = MurmurHash3(bit_cast<uint64_t>(seed));
+  state0_ = MurmurHash3(base::bit_cast<uint64_t>(seed));
   state1_ = MurmurHash3(~state0_);
   CHECK(state0_ != 0 || state1_ != 0);
 }

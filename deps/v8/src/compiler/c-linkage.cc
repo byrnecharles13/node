@@ -19,8 +19,8 @@ namespace {
 // ===========================================================================
 // == ia32 ===================================================================
 // ===========================================================================
-#define CALLEE_SAVE_REGISTERS esi, edi, ebx
-#define CALLEE_SAVE_FP_REGISTERS
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 
 #elif V8_TARGET_ARCH_X64
 // ===========================================================================
@@ -33,17 +33,16 @@ namespace {
 #define PARAM_REGISTERS rcx, rdx, r8, r9
 #define FP_PARAM_REGISTERS xmm0, xmm1, xmm2, xmm3
 #define FP_RETURN_REGISTER xmm0
-#define CALLEE_SAVE_REGISTERS rbx, rdi, rsi, r12, r13, r14, r15
-#define CALLEE_SAVE_FP_REGISTERS \
-  xmm6, xmm7, xmm8, xmm9, xmm10, xmm11, xmm12, xmm13, xmm14, xmm15
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 
 #else  // V8_TARGET_OS_WIN
 // == x64 other ==============================================================
 #define PARAM_REGISTERS rdi, rsi, rdx, rcx, r8, r9
 #define FP_PARAM_REGISTERS xmm0, xmm1, xmm2, xmm3, xmm4, xmm5, xmm6, xmm7
 #define FP_RETURN_REGISTER xmm0
-#define CALLEE_SAVE_REGISTERS rbx, r12, r13, r14, r15
-#define CALLEE_SAVE_FP_REGISTERS
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 #endif  // V8_TARGET_OS_WIN
 
 #elif V8_TARGET_ARCH_ARM
@@ -51,8 +50,8 @@ namespace {
 // == arm ====================================================================
 // ===========================================================================
 #define PARAM_REGISTERS r0, r1, r2, r3
-#define CALLEE_SAVE_REGISTERS r4, r5, r6, r7, r8, r9, r10
-#define CALLEE_SAVE_FP_REGISTERS d8, d9, d10, d11, d12, d13, d14, d15
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 
 #elif V8_TARGET_ARCH_ARM64
 // ===========================================================================
@@ -61,38 +60,32 @@ namespace {
 #define PARAM_REGISTERS x0, x1, x2, x3, x4, x5, x6, x7
 #define FP_PARAM_REGISTERS d0, d1, d2, d3, d4, d5, d6, d7
 #define FP_RETURN_REGISTER d0
-#define CALLEE_SAVE_REGISTERS x19, x20, x21, x22, x23, x24, x25, x26, x27, x28
-
-#define CALLEE_SAVE_FP_REGISTERS d8, d9, d10, d11, d12, d13, d14, d15
-
-#elif V8_TARGET_ARCH_MIPS
-// ===========================================================================
-// == mips ===================================================================
-// ===========================================================================
-#define STACK_SHADOW_WORDS 4
-#define PARAM_REGISTERS a0, a1, a2, a3
-#define CALLEE_SAVE_REGISTERS s0, s1, s2, s3, s4, s5, s6, s7
-#define CALLEE_SAVE_FP_REGISTERS f20, f22, f24, f26, f28, f30
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 
 #elif V8_TARGET_ARCH_MIPS64
 // ===========================================================================
 // == mips64 =================================================================
 // ===========================================================================
 #define PARAM_REGISTERS a0, a1, a2, a3, a4, a5, a6, a7
-#define CALLEE_SAVE_REGISTERS s0, s1, s2, s3, s4, s5, s6, s7
-#define CALLEE_SAVE_FP_REGISTERS f20, f22, f24, f26, f28, f30
+#define FP_PARAM_REGISTERS f12, f13, f14, f15, f16, f17, f18, f19
+#define FP_RETURN_REGISTER f0
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 
 #elif V8_TARGET_ARCH_LOONG64
 // ===========================================================================
 // == loong64 ================================================================
 // ===========================================================================
 #define PARAM_REGISTERS a0, a1, a2, a3, a4, a5, a6, a7
-#define CALLEE_SAVE_REGISTERS s0, s1, s2, s3, s4, s5, s6, s7, s8, fp
-#define CALLEE_SAVE_FP_REGISTERS f24, f25, f26, f27, f28, f29, f30, f31
+#define FP_PARAM_REGISTERS f0, f1, f2, f3, f4, f5, f6, f7
+#define FP_RETURN_REGISTER f0
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 
 #elif V8_TARGET_ARCH_PPC64
 // ===========================================================================
-// == ppc & ppc64 ============================================================
+// == ppc64 ==================================================================
 // ===========================================================================
 #ifdef V8_TARGET_LITTLE_ENDIAN  // ppc64le linux
 #define STACK_SHADOW_WORDS 12
@@ -100,13 +93,8 @@ namespace {
 #define STACK_SHADOW_WORDS 14
 #endif
 #define PARAM_REGISTERS r3, r4, r5, r6, r7, r8, r9, r10
-#define CALLEE_SAVE_REGISTERS                                                \
-  r14, r15, r16, r17, r18, r19, r20, r21, r22, r23, r24, r25, r26, r27, r28, \
-      r29, r30
-
-#define CALLEE_SAVE_FP_REGISTERS                                             \
-  d14, d15, d16, d17, d18, d19, d20, d21, d22, d23, d24, d25, d26, d27, d28, \
-      d29, d30, d31
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 
 #elif V8_TARGET_ARCH_S390X
 // ===========================================================================
@@ -114,19 +102,19 @@ namespace {
 // ===========================================================================
 #define STACK_SHADOW_WORDS 20
 #define PARAM_REGISTERS r2, r3, r4, r5, r6
-#define CALLEE_SAVE_REGISTERS r6, r7, r8, r9, r10, ip, r13
-#define CALLEE_SAVE_FP_REGISTERS d8, d9, d10, d11, d12, d13, d14, d15
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 
-#elif V8_TARGET_ARCH_RISCV64
+#elif V8_TARGET_ARCH_RISCV32 || V8_TARGET_ARCH_RISCV64
 // ===========================================================================
 // == riscv64 =================================================================
 // ===========================================================================
 #define PARAM_REGISTERS a0, a1, a2, a3, a4, a5, a6, a7
+#define FP_PARAM_REGISTERS fa0, fa1, fa2, fa3, fa4, fa5, fa6, fa7
 // fp is not part of CALLEE_SAVE_REGISTERS (similar to how MIPS64 or PPC defines
 // it)
-#define CALLEE_SAVE_REGISTERS s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11
-#define CALLEE_SAVE_FP_REGISTERS \
-  fs0, fs1, fs2, fs3, fs4, fs5, fs6, fs7, fs8, fs9, fs10, fs11
+#define CALLEE_SAVE_REGISTERS C_CALL_CALLEE_SAVE_REGISTERS
+#define CALLEE_SAVE_FP_REGISTERS C_CALL_CALLEE_SAVE_FP_REGISTERS
 #else
 // ===========================================================================
 // == unknown ================================================================
@@ -135,12 +123,15 @@ namespace {
 #endif
 }  // namespace
 
-#if defined(V8_TARGET_OS_WIN) && defined(V8_TARGET_ARCH_X64)
+#if (defined(V8_TARGET_OS_WIN) && defined(V8_TARGET_ARCH_X64)) || \
+    defined(V8_TARGET_ARCH_MIPS64)
 // As defined in
 // https://docs.microsoft.com/en-us/cpp/build/x64-calling-convention?view=vs-2019#parameter-passing,
 // Windows calling convention doesn't differentiate between GP and FP params
 // when counting how many of them should be placed in registers. That's why
 // we use the same counter {i} for both types here.
+// MIPS is the same, as defined in
+// https://techpubs.jurassic.nl/manuals/0630/developer/Mpro_n32_ABI/sgi_html/ch02.html#id52620.
 void BuildParameterLocations(const MachineSignature* msig,
                              size_t kFPParamRegisterCount,
                              size_t kParamRegisterCount,
@@ -172,7 +163,57 @@ void BuildParameterLocations(const MachineSignature* msig,
     }
   }
 }
-#else  // defined(V8_TARGET_OS_WIN) && defined(V8_TARGET_ARCH_X64)
+#elif defined(V8_TARGET_ARCH_LOONG64)
+// As defined in
+// https://loongson.github.io/LoongArch-Documentation/LoongArch-ELF-ABI-EN.html#_procedure_calling_convention
+// Loongarch calling convention uses GP to pass floating-point arguments when no
+// FP is available.
+void BuildParameterLocations(const MachineSignature* msig,
+                             size_t kFPParamRegisterCount,
+                             size_t kParamRegisterCount,
+                             const DoubleRegister* kFPParamRegisters,
+                             const v8::internal::Register* kParamRegisters,
+                             LocationSignature::Builder* out_locations) {
+#ifdef STACK_SHADOW_WORDS
+  int stack_offset = STACK_SHADOW_WORDS;
+#else
+  int stack_offset = 0;
+#endif
+  size_t num_params = 0;
+  size_t num_fp_params = 0;
+  for (size_t i = 0; i < msig->parameter_count(); i++) {
+    MachineType type = msig->GetParam(i);
+    if (IsFloatingPoint(type.representation())) {
+      if (num_fp_params < kFPParamRegisterCount) {
+        out_locations->AddParam(LinkageLocation::ForRegister(
+            kFPParamRegisters[num_fp_params].code(), type));
+        ++num_fp_params;
+      } else if (num_params < kParamRegisterCount) {
+        // ForNullRegister represents a floating-point param that should be put
+        // into the GPR, and reg_code is the negative of encoding of the
+        // GPR, and the maximum is -4.
+        out_locations->AddParam(LinkageLocation::ForNullRegister(
+            -kParamRegisters[num_params].code(), type));
+        ++num_params;
+      } else {
+        out_locations->AddParam(
+            LinkageLocation::ForCallerFrameSlot(-1 - stack_offset, type));
+        stack_offset++;
+      }
+    } else {
+      if (num_params < kParamRegisterCount) {
+        out_locations->AddParam(LinkageLocation::ForRegister(
+            kParamRegisters[num_params].code(), type));
+        ++num_params;
+      } else {
+        out_locations->AddParam(
+            LinkageLocation::ForCallerFrameSlot(-1 - stack_offset, type));
+        stack_offset++;
+      }
+    }
+  }
+}
+#else
 // As defined in https://www.agner.org/optimize/calling_conventions.pdf,
 // Section 7, Linux and Mac place parameters in consecutive registers,
 // differentiating between GP and FP params. That's why we maintain two
@@ -213,18 +254,20 @@ void BuildParameterLocations(const MachineSignature* msig,
     }
   }
 }
-#endif  // defined(V8_TARGET_OS_WIN) && defined(V8_TARGET_ARCH_X64)
+#endif  // (defined(V8_TARGET_OS_WIN) && defined(V8_TARGET_ARCH_X64)) ||
+        // defined(V8_TARGET_ARCH_MIPS64)
 
 // General code uses the above configuration data.
-CallDescriptor* Linkage::GetSimplifiedCDescriptor(Zone* zone,
-                                                  const MachineSignature* msig,
-                                                  CallDescriptor::Flags flags) {
+CallDescriptor* Linkage::GetSimplifiedCDescriptor(
+    Zone* zone, const MachineSignature* msig, CallDescriptor::Flags flags,
+    Operator::Properties properties) {
 #ifdef UNSUPPORTED_C_LINKAGE
   // This method should not be called on unknown architectures.
   FATAL("requested C call descriptor on unsupported architecture");
   return nullptr;
 #endif
 
+  DCHECK(properties == Operator::kNoThrow || properties == Operator::kPure);
   DCHECK_LE(msig->parameter_count(), static_cast<size_t>(kMaxCParameters));
 
   LocationSignature::Builder locations(zone, msig->return_count(),
@@ -295,13 +338,16 @@ CallDescriptor* Linkage::GetSimplifiedCDescriptor(Zone* zone,
   LinkageLocation target_loc = LinkageLocation::ForAnyRegister(target_type);
   flags |= CallDescriptor::kNoAllocate;
 
+  // Use kInvalidEntrypointTag since C call functions are never supposed
+  // to be called indirectly through Code objects.
   return zone->New<CallDescriptor>(  // --
       CallDescriptor::kCallAddress,  // kind
+      kInvalidEntrypointTag,         // tag
       target_type,                   // target MachineType
       target_loc,                    // target location
-      locations.Build(),             // location_sig
+      locations.Get(),               // location_sig
       0,                             // stack_parameter_count
-      Operator::kNoThrow,            // properties
+      properties,                    // properties
       kCalleeSaveRegisters,          // callee-saved registers
       kCalleeSaveFPRegisters,        // callee-saved fp regs
       flags, "c-call");

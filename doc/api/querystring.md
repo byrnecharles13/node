@@ -2,7 +2,7 @@
 
 <!--introduced_in=v0.1.25-->
 
-> Stability: 3 - Legacy
+> Stability: 2 - Stable
 
 <!--name=querystring-->
 
@@ -15,8 +15,9 @@ query strings. It can be accessed using:
 const querystring = require('node:querystring');
 ```
 
-The `querystring` API is considered Legacy. While it is still maintained,
-new code should use the {URLSearchParams} API instead.
+`querystring` is more performant than {URLSearchParams} but is not a
+standardized API. Use {URLSearchParams} when performance is not critical or
+when compatibility with browser code is desirable.
 
 ## `querystring.decode()`
 
@@ -86,12 +87,10 @@ collection of key and value pairs.
 
 For example, the query string `'foo=bar&abc=xyz&abc=123'` is parsed into:
 
-<!-- eslint-skip -->
-
-```js
+```json
 {
-  foo: 'bar',
-  abc: ['xyz', '123']
+  "foo": "bar",
+  "abc": ["xyz", "123"]
 }
 ```
 

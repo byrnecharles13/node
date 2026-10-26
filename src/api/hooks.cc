@@ -3,6 +3,9 @@
 #include "node_process-inl.h"
 #include "async_wrap.h"
 
+#include <algorithm>
+#include <unordered_map>
+
 namespace node {
 
 using v8::Context;
@@ -16,7 +19,6 @@ using v8::NewStringType;
 using v8::Nothing;
 using v8::Object;
 using v8::String;
-using v8::Value;
 
 void RunAtExit(Environment* env) {
   env->RunAtExitCallbacks();
@@ -27,63 +29,66 @@ void AtExit(Environment* env, void (*cb)(void* arg), void* arg) {
   env->AtExit(cb, arg);
 }
 
-void EmitBeforeExit(Environment* env) {
-  USE(EmitProcessBeforeExit(env));
-}
-
 Maybe<bool> EmitProcessBeforeExit(Environment* env) {
   TRACE_EVENT0(TRACING_CATEGORY_NODE1(environment), "BeforeExit");
   if (!env->destroy_async_id_list()->empty())
     AsyncWrap::DestroyAsyncIdsCallback(env);
 
-  HandleScope handle_scope(env->isolate());
-  Local<Context> context = env->context();
-  Context::Scope context_scope(context);
+  Isolate* isolate = env->isolate();
+  HandleScope handle_scope(isolate);
+  Context::Scope context_scope(env->context());
 
-  Local<Value> exit_code_v;
-  if (!env->process_object()->Get(context, env->exit_code_string())
-      .ToLocal(&exit_code_v)) return Nothing<bool>();
-
-  Local<Integer> exit_code;
-  if (!exit_code_v->ToInteger(context).ToLocal(&exit_code)) {
+  if (!env->can_call_into_js()) {
     return Nothing<bool>();
   }
 
-  return ProcessEmit(env, "beforeExit", exit_code).IsEmpty() ?
-      Nothing<bool>() : Just(true);
+  Local<Integer> exit_code = Integer::New(
+      isolate, static_cast<int32_t>(env->exit_code(ExitCode::kNoFailure)));
+
+  return ProcessEmit(env, "beforeExit", exit_code).IsEmpty() ? Nothing<bool>()
+                                                             : Just(true);
 }
 
-int EmitExit(Environment* env) {
-  return EmitProcessExit(env).FromMaybe(1);
-}
-
-Maybe<int> EmitProcessExit(Environment* env) {
+Maybe<ExitCode> EmitProcessExitInternal(Environment* env) {
   // process.emit('exit')
   Isolate* isolate = env->isolate();
   HandleScope handle_scope(isolate);
-  Local<Context> context = env->context();
-  Context::Scope context_scope(context);
-  Local<Object> process_object = env->process_object();
+  Context::Scope context_scope(env->context());
 
-  // TODO(addaleax): It might be nice to share process.exitCode via
-  // getter/setter pairs that pass data directly to the native side, so that we
-  // don't manually have to read and write JS properties here. These getters
-  // could use e.g. a typed array for performance.
   env->set_exiting(true);
 
-  Local<String> exit_code = env->exit_code_string();
-  Local<Value> code_v;
-  int code;
-  if (!process_object->Get(context, exit_code).ToLocal(&code_v) ||
-      !code_v->Int32Value(context).To(&code) ||
-      ProcessEmit(env, "exit", Integer::New(isolate, code)).IsEmpty() ||
-      // Reload exit code, it may be changed by `emit('exit')`
-      !process_object->Get(context, exit_code).ToLocal(&code_v) ||
-      !code_v->Int32Value(context).To(&code)) {
-    return Nothing<int>();
+  if (!env->can_call_into_js()) {
+    return Nothing<ExitCode>();
   }
 
-  return Just(code);
+  ExitCode exit_code = env->exit_code(ExitCode::kNoFailure);
+
+  // the exit code wasn't already set, so let's check for unsettled tlas
+  if (exit_code == ExitCode::kNoFailure) {
+    auto unsettled_tla = env->CheckUnsettledTopLevelAwait();
+    if (!unsettled_tla.FromJust()) {
+      exit_code = ExitCode::kUnsettledTopLevelAwait;
+      env->set_exit_code(exit_code);
+    }
+  }
+
+  Local<Integer> exit_code_int =
+      Integer::New(isolate, static_cast<int32_t>(exit_code));
+
+  if (ProcessEmit(env, "exit", exit_code_int).IsEmpty()) {
+    return Nothing<ExitCode>();
+  }
+
+  // Reload exit code, it may be changed by `emit('exit')`
+  return Just(env->exit_code(exit_code));
+}
+
+Maybe<int> EmitProcessExit(Environment* env) {
+  Maybe<ExitCode> result = EmitProcessExitInternal(env);
+  if (result.IsNothing()) {
+    return Nothing<int>();
+  }
+  return Just(static_cast<int>(result.FromJust()));
 }
 
 typedef void (*CleanupHook)(void* arg);
@@ -113,20 +118,93 @@ struct ACHHandle final {
 // this.
 void DeleteACHHandle::operator ()(ACHHandle* handle) const { delete handle; }
 
+// TODO(addaleax): Having this extra set of data structures is far from
+// ideal, but unfortunately the public synchronous cleanup hook API was
+// slightly mis-designed; in particular, RemoveEnvironmentCleanupHook() needs
+// to keep working when the Isolate either has no active context (such as
+// during GC) or that context is associated with another Node.js Environment.
+// We should align this with the asynchronous API, which handles this properly
+// through an explicit reference to the cleanup hook instead of requiring
+// lookups in internal maps.
+struct CleanupHookThunk final {
+  Isolate* isolate;
+  Environment* env;
+  CleanupHook fun;
+  void* arg;
+  bool running = false;
+};
+// Keyed on `arg`. The same hook may be registered once per Environment, and
+// several Environments can share an Isolate.
+using CleanupHookRegistry = std::unordered_multimap<void*, CleanupHookThunk>;
+static ExclusiveAccess<CleanupHookRegistry> cleanup_hook_registry;
+
+static void CleanupHookThunkRun(void* arg) {
+  CleanupHookThunk* thunk = static_cast<CleanupHookThunk*>(arg);
+  {
+    ExclusiveAccess<CleanupHookRegistry>::Scoped registry(
+        &cleanup_hook_registry);
+    thunk->running = true;
+  }
+  thunk->fun(thunk->arg);
+  ExclusiveAccess<CleanupHookRegistry>::Scoped registry(&cleanup_hook_registry);
+  auto [begin, end] = registry->equal_range(thunk->arg);
+  auto self = std::find_if(
+      begin, end, [&](const auto& entry) { return &entry.second == thunk; });
+  CHECK(self != end);
+  registry->erase(self);
+}
+
 void AddEnvironmentCleanupHook(Isolate* isolate,
                                CleanupHook fun,
                                void* arg) {
   Environment* env = Environment::GetCurrent(isolate);
   CHECK_NOT_NULL(env);
-  env->AddCleanupHook(fun, arg);
+  CleanupHookThunk* thunk;
+  {
+    ExclusiveAccess<CleanupHookRegistry>::Scoped registry(
+        &cleanup_hook_registry);
+    auto [begin, end] = registry->equal_range(arg);
+    // Adding the same hook twice to one Environment is documented to abort;
+    // a running hook may register itself again.
+    CHECK(std::none_of(begin, end, [&](const auto& entry) {
+      return entry.second.env == env && entry.second.fun == fun &&
+             !entry.second.running;
+    }));
+    thunk = &registry->emplace(arg, CleanupHookThunk{isolate, env, fun, arg})
+                 ->second;
+  }
+  env->AddCleanupHook(CleanupHookThunkRun, thunk);
 }
 
 void RemoveEnvironmentCleanupHook(Isolate* isolate,
                                   CleanupHook fun,
                                   void* arg) {
-  Environment* env = Environment::GetCurrent(isolate);
-  CHECK_NOT_NULL(env);
-  env->RemoveCleanupHook(fun, arg);
+  // Prefer the current Environment's registration and otherwise take any
+  // match: there may be no current context (GC, addon threads) or it may
+  // belong to another Environment on the same isolate.
+  Environment* current =
+      isolate != nullptr && isolate == Isolate::TryGetCurrent()
+          ? Environment::GetCurrent(isolate)
+          : nullptr;
+  CleanupHookThunk thunk;
+  void* wrapped_arg;
+  {
+    ExclusiveAccess<CleanupHookRegistry>::Scoped registry(
+        &cleanup_hook_registry);
+    auto [begin, end] = registry->equal_range(arg);
+    auto found = end;
+    for (auto it = begin; it != end; ++it) {
+      if (it->second.isolate != isolate || it->second.fun != fun) continue;
+      if (found == end || it->second.env == current) found = it;
+      if (it->second.env == current) break;
+    }
+    // A running hook is removing itself; CleanupHookThunkRun() cleans up.
+    if (found == end || found->second.running) return;
+    wrapped_arg = &found->second;
+    thunk = found->second;
+    registry->erase(found);
+  }
+  thunk.env->RemoveCleanupHook(CleanupHookThunkRun, wrapped_arg);
 }
 
 static void FinishAsyncCleanupHook(void* arg) {
@@ -182,6 +260,12 @@ async_id AsyncHooksGetExecutionAsyncId(Isolate* isolate) {
   return env->execution_async_id();
 }
 
+async_id AsyncHooksGetExecutionAsyncId(Local<Context> context) {
+  Environment* env = Environment::GetCurrent(context);
+  if (env == nullptr) return -1;
+  return env->execution_async_id();
+}
+
 async_id AsyncHooksGetTriggerAsyncId(Isolate* isolate) {
   Environment* env = Environment::GetCurrent(isolate);
   if (env == nullptr) return -1;
@@ -193,9 +277,18 @@ async_context EmitAsyncInit(Isolate* isolate,
                             Local<Object> resource,
                             const char* name,
                             async_id trigger_async_id) {
+  return EmitAsyncInit(
+      isolate, resource, std::string_view(name), trigger_async_id);
+}
+
+async_context EmitAsyncInit(Isolate* isolate,
+                            Local<Object> resource,
+                            std::string_view name,
+                            async_id trigger_async_id) {
   HandleScope handle_scope(isolate);
   Local<String> type =
-      String::NewFromUtf8(isolate, name, NewStringType::kInternalized)
+      String::NewFromUtf8(
+          isolate, name.data(), NewStringType::kInternalized, name.size())
           .ToLocalChecked();
   return EmitAsyncInit(isolate, resource, type, trigger_async_id);
 }

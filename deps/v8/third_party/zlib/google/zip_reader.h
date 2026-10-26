@@ -1,4 +1,4 @@
-// Copyright (c) 2011 The Chromium Authors. All rights reserved.
+// Copyright 2011 The Chromium Authors
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 #ifndef THIRD_PARTY_ZLIB_GOOGLE_ZIP_READER_H_
@@ -10,10 +10,12 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <string_view>
 
-#include "base/callback.h"
+#include "base/containers/span.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/time/time.h"
@@ -38,7 +40,7 @@ class WriterDelegate {
 
   // Invoked to write the next chunk of data. Return false on failure to cancel
   // extraction.
-  virtual bool WriteBytes(const char* data, int num_bytes) { return true; }
+  virtual bool WriteBytes(base::span<const uint8_t> data) { return true; }
 
   // Sets the last-modified time of the data.
   virtual void SetTimeModified(const base::Time& time) {}
@@ -51,6 +53,27 @@ class WriterDelegate {
   // Called if an error occurred while extracting the file. The WriterDelegate
   // can then remove and clean up the partially extracted data.
   virtual void OnError() {}
+};
+
+// A delegate interface used to read data from the ZIP archive.
+class ReaderDelegate {
+ public:
+  virtual ~ReaderDelegate() = default;
+
+  // Invoked to read the next chunk of data.
+  // Returns the number of bytes read and -1 on error.
+  virtual int64_t ReadBytes(base::span<uint8_t> data) = 0;
+
+  // Invoked to seek to the specified offset. Returns true on success.
+  virtual bool Seek(int64_t offset) = 0;
+
+  // Invoked to get the current offset.
+  // Returns the current offset and -1 on error.
+  virtual int64_t Tell() = 0;
+
+  // Invoked to get the size of the file.
+  // Returns the file size and -1 on error.
+  virtual int64_t GetLength() = 0;
 };
 
 // This class is used for reading ZIP archives. A typical use case of this class
@@ -85,6 +108,9 @@ class ZipReader {
   // A callback that is called periodically during the operation with the number
   // of bytes that have been processed so far.
   using ProgressCallback = base::RepeatingCallback<void(int64_t)>;
+  // A callback that is called periodically during the operation with the number
+  // of bytes that have been processed since the previous call (i.e. delta).
+  using ListenerCallback = base::RepeatingCallback<void(uint64_t)>;
 
   // Information of an entry (file or directory) in a ZIP archive.
   struct Entry {
@@ -103,6 +129,11 @@ class ZipReader {
     // ../a     -> UP/a
     // ./a      -> DOT/a
     base::FilePath path;
+
+    // Physical path from the ZIP Central Directory, before applying the
+    // Info-ZIP Unicode Path Extra Field. This is converted and normalized in
+    // the same way as `path`.
+    base::FilePath physical_path;
 
     // Size of the original uncompressed file, or 0 if the entry is a directory.
     // This value should not be trusted, because it is stored as metadata in the
@@ -125,17 +156,23 @@ class ZipReader {
 
     // True if the entry is a directory.
     // False if the entry is a file.
-    bool is_directory;
+    bool is_directory = false;
 
     // True if the entry path cannot be converted to a safe relative path. This
     // happens if a file entry (not a directory) has a filename "." or "..".
-    bool is_unsafe;
+    bool is_unsafe = false;
 
     // True if the file content is encrypted.
-    bool is_encrypted;
+    bool is_encrypted = false;
+
+    // True if the encryption scheme is AES.
+    bool uses_aes_encryption = false;
 
     // Entry POSIX permissions (POSIX systems only).
     int posix_mode;
+
+    // True if the entry is a symbolic link (POSIX systems only).
+    bool is_symbolic_link = false;
   };
 
   ZipReader();
@@ -157,6 +194,10 @@ class ZipReader {
   // the given sring while extracting files, i.e. the caller should keep the
   // string until it finishes extracting files.
   bool OpenFromString(const std::string& data);
+
+  // Opens the ZIP archive from a reader delegate. The delegate must outlive
+  // the ZipReader. Returns true on success.
+  bool OpenFromReaderDelegate(ReaderDelegate* delegate);
 
   // Closes the currently opened ZIP archive. This function is called in the
   // destructor of the class, so you usually don't need to call this.
@@ -204,6 +245,17 @@ class ZipReader {
   bool ExtractCurrentEntry(WriterDelegate* delegate,
                            uint64_t num_bytes_to_extract =
                                std::numeric_limits<uint64_t>::max()) const;
+
+  // Extracts the current entry to |delegate|, starting from the beginning
+  // of the entry, calling |listener_callback| regularly with the number of
+  // bytes extracted.
+  //
+  // Returns true if the entire file was extracted without error.
+  //
+  // Precondition: Next() returned a non-null Entry.
+  bool ExtractCurrentEntryWithListener(
+      WriterDelegate* delegate,
+      ListenerCallback listener_callback) const;
 
   // Asynchronously extracts the current entry to the given output file path. If
   // the current entry is a directory it just creates the directory
@@ -264,7 +316,22 @@ class ZipReader {
 
   // Normalizes the given path passed as UTF-16 string piece. Sets entry_.path,
   // entry_.is_directory and entry_.is_unsafe.
-  void Normalize(base::StringPiece16 in);
+  void Normalize(std::u16string_view in);
+
+  // Runs the ListenerCallback at a throttled rate.
+  void ReportProgress(ListenerCallback listener_callback, uint64_t bytes) const;
+
+  // Extracts |num_bytes_to_extract| bytes of the current entry to |delegate|,
+  // starting from the beginning of the entry calling |listener_callback| if
+  // its supplied.
+  //
+  // Returns true if the entire file was extracted without error.
+  //
+  // Precondition: Next() returned a non-null Entry.
+  bool ExtractCurrentEntry(WriterDelegate* delegate,
+                           ListenerCallback listener_callback,
+                           uint64_t num_bytes_to_extract =
+                               std::numeric_limits<uint64_t>::max()) const;
 
   // Extracts a chunk of the file to the target.  Will post a task for the next
   // chunk and success/failure/progress callbacks as necessary.
@@ -282,6 +349,16 @@ class ZipReader {
   bool reached_end_;
   bool ok_;
   Entry entry_;
+
+  // Next time to report progress.
+  mutable base::TimeTicks next_progress_report_time_ = base::TimeTicks::Now();
+
+  // Progress time delta.
+  // TODO(crbug.com/953256) Add this as parameter to the unzip options.
+  base::TimeDelta progress_period_ = base::Milliseconds(1000);
+
+  // Number of bytes read since last progress report callback executed.
+  mutable uint64_t delta_bytes_read_ = 0;
 
   base::WeakPtrFactory<ZipReader> weak_ptr_factory_{this};
 };
@@ -306,9 +383,9 @@ class FileWriterDelegate : public WriterDelegate {
   // Returns true if the file handle passed to the constructor is valid.
   bool PrepareOutput() override;
 
-  // Writes |num_bytes| bytes of |data| to the file, returning false on error or
-  // if not all bytes could be written.
-  bool WriteBytes(const char* data, int num_bytes) override;
+  // Writes |data| to the file, returning false on error or if not all bytes
+  // could be written.
+  bool WriteBytes(base::span<const uint8_t> data) override;
 
   // Sets the last-modified time of the data.
   void SetTimeModified(const base::Time& time) override;

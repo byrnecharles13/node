@@ -2,17 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/heap/cppgc/heap-page.h"
+#include "src/heap/cppgc-internal/heap-page.h"
 
 #include <algorithm>
 
 #include "include/cppgc/allocation.h"
 #include "include/cppgc/persistent.h"
 #include "src/base/macros.h"
-#include "src/heap/cppgc/globals.h"
-#include "src/heap/cppgc/heap-object-header.h"
-#include "src/heap/cppgc/page-memory.h"
-#include "src/heap/cppgc/raw-heap.h"
+#include "src/heap/cppgc-internal/globals.h"
+#include "src/heap/cppgc-internal/heap-object-header.h"
+#include "src/heap/cppgc-internal/page-memory.h"
+#include "src/heap/cppgc-internal/raw-heap.h"
 #include "test/unittests/heap/cppgc/tests.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -188,7 +188,8 @@ TEST_F(PageTest, NormalPageCreationDestruction) {
   const PageBackend* backend = Heap::From(GetHeap())->page_backend();
   auto* space = static_cast<NormalPageSpace*>(
       heap.Space(RawHeap::RegularSpaceType::kNormal1));
-  auto* page = NormalPage::Create(GetPageBackend(), *space);
+  auto* page = NormalPage::TryCreate(GetPageBackend(), *space);
+  EXPECT_NE(nullptr, page);
   EXPECT_NE(nullptr, backend->Lookup(page->PayloadStart()));
 
   space->AddPage(page);
@@ -213,7 +214,8 @@ TEST_F(PageTest, LargePageCreationDestruction) {
   const PageBackend* backend = Heap::From(GetHeap())->page_backend();
   auto* space = static_cast<LargePageSpace*>(
       heap.Space(RawHeap::RegularSpaceType::kLarge));
-  auto* page = LargePage::Create(GetPageBackend(), *space, kObjectSize);
+  auto* page = LargePage::TryCreate(GetPageBackend(), *space, kObjectSize);
+  EXPECT_NE(nullptr, page);
   EXPECT_NE(nullptr, backend->Lookup(page->PayloadStart()));
 
   space->AddPage(page);
@@ -231,15 +233,17 @@ TEST_F(PageTest, UnsweptPageDestruction) {
   {
     auto* space = static_cast<NormalPageSpace*>(
         heap.Space(RawHeap::RegularSpaceType::kNormal1));
-    auto* page = NormalPage::Create(GetPageBackend(), *space);
+    auto* page = NormalPage::TryCreate(GetPageBackend(), *space);
+    EXPECT_NE(nullptr, page);
     space->AddPage(page);
     EXPECT_DEATH_IF_SUPPORTED(NormalPage::Destroy(page), "");
   }
   {
     auto* space = static_cast<LargePageSpace*>(
         heap.Space(RawHeap::RegularSpaceType::kLarge));
-    auto* page = LargePage::Create(GetPageBackend(), *space,
-                                   2 * kLargeObjectSizeThreshold);
+    auto* page = LargePage::TryCreate(GetPageBackend(), *space,
+                                      2 * kLargeObjectSizeThreshold);
+    EXPECT_NE(nullptr, page);
     space->AddPage(page);
     EXPECT_DEATH_IF_SUPPORTED(LargePage::Destroy(page), "");
     // Detach page and really destroy page in the parent process so that sweeper

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --allow-natives-syntax --opt
+// Flags: --allow-natives-syntax --turbofan
 
 /* Test deopt behaviors when the prototype has elements */
 
@@ -85,6 +85,49 @@
   // deopt because of map change
   iarr.__proto__ = [2];
   assertTrue(includes(iarr, 2));
+})();
+
+(function TestIncludesFromIndexTruncation() {
+  function includes_in_range_neg(arr, val) { return arr.includes(val, -3); }
+  function includes_in_range_pos(arr, val) { return arr.includes(val, 3); }
+
+  function includes_extreme_neg(arr, val) { return arr.includes(val, -2147483649); }
+
+  function includes_extreme_pos(arr, val) { return arr.includes(val, 2147483648); }
+  function includes_extreme_huge(arr, val) { return arr.includes(val, 1e15); }
+
+  const test_fns = [
+    includes_in_range_neg,
+    includes_in_range_pos,
+    includes_extreme_neg,
+    includes_extreme_pos,
+    includes_extreme_huge,
+  ];
+
+  for (let f of test_fns) %PrepareFunctionForOptimization(f);
+
+  assertEquals(true, includes_in_range_neg([1, 2, 3], 1));
+  assertEquals(false, includes_in_range_pos([1, 2, 3], 1));
+
+  assertEquals(true, includes_extreme_neg([1, 2, 3], 1));
+  assertEquals(false, includes_extreme_pos([1, 2, 3], 1));
+  assertEquals(false, includes_extreme_huge([1, 2, 3], 1));
+
+  for (let f of test_fns) %OptimizeFunctionOnNextCall(f);
+
+  assertEquals(true, includes_in_range_neg([1, 2, 3], 1));
+  assertEquals(false, includes_in_range_pos([1, 2, 3], 1));
+
+  assertEquals(true, includes_extreme_neg([1, 2, 3], 1));
+  assertEquals(false, includes_extreme_pos([1, 2, 3], 1));
+  assertEquals(false, includes_extreme_huge([1, 2, 3], 1));
+
+  assertOptimized(includes_in_range_neg);
+  assertOptimized(includes_in_range_pos);
+
+  assertUnoptimized(includes_extreme_neg);
+  assertUnoptimized(includes_extreme_pos);
+  assertUnoptimized(includes_extreme_huge);
 })();
 
 // This pollutes the Array prototype, so we should not run more tests

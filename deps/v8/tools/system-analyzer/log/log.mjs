@@ -4,8 +4,10 @@
 
 export class LogEntry {
   constructor(type, time) {
+    /** @type {number} */
     this._time = time;
     this._type = type;
+    /** @type {?SourcePosition} */
     this.sourcePosition = undefined;
   }
 
@@ -15,6 +17,10 @@ export class LogEntry {
 
   get type() {
     return this._type;
+  }
+
+  get typeName() {
+    return this.constructor.typeName ?? 'unknown';
   }
 
   get script() {
@@ -43,12 +49,22 @@ export class LogEntry {
     return toolTipDescription;
   }
 
+  toDetailJSON() {
+    return {
+      time: this.time,
+      type: this.type,
+      sourcePosition: this.sourcePosition?.toDetailJSON()
+    };
+  }
+
   // Returns an Array of all possible #type values.
+  /**  @return {string[]} */
   static get allTypes() {
     throw new Error('Not implemented.');
   }
 
   // Returns an array of public property names.
+  /**  @return {string[]} */
   static get propertyNames() {
     throw new Error('Not implemented.');
   }

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Copyright 2018 the V8 project authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
@@ -32,7 +32,7 @@ except NameError:
 
 ARGPARSE = argparse.ArgumentParser(
     description=("A script that computes LoC for a build dir"),
-    epilog="""Examples:
+    epilog=r"""Examples:
  Count with default settings for build in out/Default:
    locs.py --build-dir out/Default
  Count only a custom group of files settings for build in out/Default:

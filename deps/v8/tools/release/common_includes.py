@@ -30,14 +30,12 @@ import argparse
 import datetime
 from distutils.version import LooseVersion
 import glob
-import imp
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
-import textwrap
 import time
 import urllib
 
@@ -114,15 +112,15 @@ def Command(cmd, args="", prefix="", pipe=True, cwd=None):
 
 
 def SanitizeVersionTag(tag):
-    version_without_prefix = re.compile(r"^\d+\.\d+\.\d+(?:\.\d+)?$")
-    version_with_prefix = re.compile(r"^tags\/\d+\.\d+\.\d+(?:\.\d+)?$")
+  version_without_prefix = re.compile(r"^\d+\.\d+\.\d+(?:\.\d+)?$")
+  version_with_prefix = re.compile(r"^tags\/\d+\.\d+\.\d+(?:\.\d+)?$")
 
-    if version_without_prefix.match(tag):
-      return tag
-    elif version_with_prefix.match(tag):
-        return tag[len("tags/"):]
-    else:
-      return None
+  if version_without_prefix.match(tag):
+    return tag
+  elif version_with_prefix.match(tag):
+    return tag[len("tags/"):]
+  else:
+    return None
 
 
 def NormalizeVersionTags(version_tags):
@@ -131,7 +129,7 @@ def NormalizeVersionTags(version_tags):
   # Remove tags/ prefix because of packed refs.
   for current_tag in version_tags:
     version_tag = SanitizeVersionTag(current_tag)
-    if version_tag != None:
+    if version_tag is not None:
       normalized_version_tags.append(version_tag)
 
   return normalized_version_tags
@@ -146,6 +144,7 @@ class SideEffectHandler(object):  # pragma: no cover
     return Command(cmd, args, prefix, pipe, cwd=cwd)
 
   def ReadLine(self):
+    sys.stdout.flush()
     return sys.stdin.readline().strip()
 
   def ReadURL(self, url, params=None):
@@ -238,7 +237,7 @@ class GitInterface(VCInterface):
     self.step.Git("fetch")
 
   def GetTags(self):
-     return self.step.Git("tag").strip().splitlines()
+    return self.step.Git("tag").strip().splitlines()
 
   def GetBranches(self):
     # Get relevant remote branches, e.g. "branch-heads/3.25".
@@ -532,22 +531,13 @@ class Step(GitRecipesMixin):
       self.WaitForResolvingConflicts(patch_file)
 
   def GetVersionTag(self, revision):
-    tag = self.Git("describe --tags %s" % revision).strip()
-    return SanitizeVersionTag(tag)
+    tags = self.Git(f"tag --points-at {revision}").strip().split('\n')
+    for tag in tags:
+      sanitized_tag = SanitizeVersionTag(tag)
+      if sanitized_tag:
+        return sanitized_tag
 
-  def GetRecentReleases(self, max_age):
-    # Make sure tags are fetched.
-    self.Git("fetch origin +refs/tags/*:refs/tags/*")
-
-    # Current timestamp.
-    time_now = int(self._side_effect_handler.GetUTCStamp())
-
-    # List every tag from a given period.
-    revisions = self.Git("rev-list --max-age=%d --tags" %
-                         int(time_now - max_age)).strip()
-
-    # Filter out revisions who's tag is off by one or more commits.
-    return list(filter(self.GetVersionTag, revisions.splitlines()))
+    return None
 
   def GetLatestVersion(self):
     # Use cached version if available.
@@ -560,7 +550,15 @@ class Step(GitRecipesMixin):
     all_tags = self.vc.GetTags()
     only_version_tags = NormalizeVersionTags(all_tags)
 
-    version = sorted(only_version_tags,
+    def patched_dev_version(tag):
+      """True if this tag represents a patched dev or mini branch."""
+      parts = tag.split('.')
+      return len(parts) >= 3 and int(parts[2]) > 999
+
+    filtered_version_tags = [
+      tag for tag in only_version_tags if not patched_dev_version(tag)]
+
+    version = sorted(filtered_version_tags,
                      key=LooseVersion, reverse=True)[0]
     self["latest_version"] = version
     return version
@@ -626,16 +624,16 @@ class Step(GitRecipesMixin):
     output = ""
     for line in FileToText(version_file).splitlines():
       if line.startswith("#define V8_MAJOR_VERSION"):
-        line = re.sub("\d+$", self[prefix + "major"], line)
+        line = re.sub(r"\d+$", self[prefix + "major"], line)
       elif line.startswith("#define V8_MINOR_VERSION"):
-        line = re.sub("\d+$", self[prefix + "minor"], line)
+        line = re.sub(r"\d+$", self[prefix + "minor"], line)
       elif line.startswith("#define V8_BUILD_NUMBER"):
-        line = re.sub("\d+$", self[prefix + "build"], line)
+        line = re.sub(r"\d+$", self[prefix + "build"], line)
       elif line.startswith("#define V8_PATCH_LEVEL"):
-        line = re.sub("\d+$", self[prefix + "patch"], line)
+        line = re.sub(r"\d+$", self[prefix + "patch"], line)
       elif (self[prefix + "candidate"] and
             line.startswith("#define V8_IS_CANDIDATE_VERSION")):
-        line = re.sub("\d+$", self[prefix + "candidate"], line)
+        line = re.sub(r"\d+$", self[prefix + "candidate"], line)
       output += "%s\n" % line
     TextToFile(output, version_file)
 
@@ -653,7 +651,9 @@ class BootstrapStep(Step):
     if not os.path.exists(self._options.work_dir):
       os.makedirs(self._options.work_dir)
     if not os.path.exists(self.default_cwd):
-      self.Command("fetch", "v8", cwd=self._options.work_dir)
+      self.Git("cl creds-check", pipe=False, cwd=self._options.work_dir)
+      self.Git("clone https://chromium.googlesource.com/v8/v8",
+               cwd=self._options.work_dir)
 
 
 class UploadStep(Step):
@@ -684,18 +684,22 @@ class UploadStep(Step):
 
 def MakeStep(step_class=Step, number=0, state=None, config=None,
              options=None, side_effect_handler=DEFAULT_SIDE_EFFECT_HANDLER):
-    # Allow to pass in empty dictionaries.
-    state = state if state is not None else {}
-    config = config if config is not None else {}
+  # Allow to pass in empty dictionaries.
+  state = state if state is not None else {}
+  config = config if config is not None else {}
 
-    try:
-      message = step_class.MESSAGE
-    except AttributeError:
-      message = step_class.__name__
+  try:
+    message = step_class.MESSAGE
+  except AttributeError:
+    message = step_class.__name__
 
-    return step_class(message, number=number, config=config,
-                      state=state, options=options,
-                      handler=side_effect_handler)
+  return step_class(
+      message,
+      number=number,
+      config=config,
+      state=state,
+      options=options,
+      handler=side_effect_handler)
 
 
 class ScriptsBase(object):

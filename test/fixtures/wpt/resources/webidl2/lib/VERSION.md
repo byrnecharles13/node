@@ -1,1 +1,1 @@
-Currently using webidl2.js@1fd6709ef9311f2ea0ed4ff0016ecf6f5d615104.
+Currently using webidl2.js@e6d8ab852ec4e76596f6e308eb7f2efc8b613bfd.

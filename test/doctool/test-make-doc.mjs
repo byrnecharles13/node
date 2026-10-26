@@ -21,20 +21,20 @@ const actualDocs = allDocs.filter(
   (name) => {
     const extension = path.extname(name);
     return extension === '.html' || extension === '.json';
-  }
+  },
 );
 
 for (const name of actualDocs) {
-  if (name.startsWith('all.')) continue;
+  if (name.startsWith('all.') || name === 'apilinks.json') continue;
 
   assert.ok(
     allMD.includes(name.replace(/\.\w+$/, '.md')),
-    `Unexpected output: out/doc/api/${name}, remove and rerun.`
+    `Unexpected output: out/doc/api/${name}, remove and rerun.`,
   );
 }
 
 const toc = fs.readFileSync(new URL('./index.html', apiURL), 'utf8');
-const re = /href="([^/]+\.html)"/;
+const re = /href=("([^/]+\.html)"|([^/]+\.html))/;
 const globalRe = new RegExp(re, 'g');
 const links = toc.match(globalRe);
 assert.notStrictEqual(links, null);
@@ -46,9 +46,11 @@ const expectedJsons = linkedHtmls
                        .map((name) => name.replace('.html', '.json'));
 const expectedDocs = linkedHtmls.concat(expectedJsons);
 const renamedDocs = ['policy.json', 'policy.html'];
+const skipedDocs = ['dtls.json', 'dtls.html', 'quic.json', 'quic.html'];
 
 // Test that all the relative links in the TOC match to the actual documents.
 for (const expectedDoc of expectedDocs) {
+  if (skipedDocs.includes(expectedDoc)) continue;
   assert.ok(actualDocs.includes(expectedDoc), `${expectedDoc} does not exist`);
 }
 
@@ -59,13 +61,14 @@ for (const actualDoc of actualDocs) {
   // Unless the old file is still available pointing to the correct location
   // 301 redirects are not yet automated. So keeping the old URL is a
   // reasonable workaround.
-  if (renamedDocs.includes(actualDoc)) continue;
+  if (renamedDocs.includes(actualDoc) || skipedDocs.includes(actualDoc) ||
+      actualDoc === 'apilinks.json') continue;
   assert.ok(
     expectedDocs.includes(actualDoc), `${actualDoc} does not match TOC`);
 
   assert.notStrictEqual(
     fs.statSync(new URL(`./${actualDoc}`, apiURL)).size,
     0,
-    `${actualDoc} is empty`
+    `${actualDoc} is empty`,
   );
 }

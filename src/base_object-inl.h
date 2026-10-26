@@ -32,10 +32,10 @@
 
 namespace node {
 
-// static
-v8::Local<v8::FunctionTemplate> BaseObject::GetConstructorTemplate(
-    Environment* env) {
-  return BaseObject::GetConstructorTemplate(env->isolate_data());
+BaseObject::BaseObject(Environment* env, v8::Local<v8::Object> object)
+    : BaseObject(env->principal_realm(), object) {
+  // TODO(legendecas): Check the shorthand is only used in the principal realm
+  // while allowing to create a BaseObject in a vm context.
 }
 
 void BaseObject::Detach() {
@@ -55,24 +55,54 @@ v8::Local<v8::Object> BaseObject::object() const {
 v8::Local<v8::Object> BaseObject::object(v8::Isolate* isolate) const {
   v8::Local<v8::Object> handle = object();
 
-  DCHECK_EQ(handle->GetCreationContext().ToLocalChecked()->GetIsolate(),
-            isolate);
   DCHECK_EQ(env()->isolate(), isolate);
 
   return handle;
 }
 
 Environment* BaseObject::env() const {
-  return env_;
+  return realm_->env();
+}
+
+Realm* BaseObject::realm() const {
+  return realm_;
+}
+
+bool BaseObject::IsBaseObject(IsolateData* isolate_data,
+                              v8::Local<v8::Object> obj) {
+  if (obj->InternalFieldCount() < BaseObject::kInternalFieldCount) {
+    return false;
+  }
+
+  uint16_t* ptr =
+      static_cast<uint16_t*>(obj->GetAlignedPointerFromInternalField(
+          BaseObject::kEmbedderType, EmbedderDataTag::kEmbedderType));
+  return ptr == isolate_data->embedder_id_for_non_cppgc();
+}
+
+void BaseObject::TagBaseObject(IsolateData* isolate_data,
+                               v8::Local<v8::Object> object) {
+  DCHECK_GE(object->InternalFieldCount(), BaseObject::kInternalFieldCount);
+  object->SetAlignedPointerInInternalField(
+      BaseObject::kEmbedderType,
+      isolate_data->embedder_id_for_non_cppgc(),
+      EmbedderDataTag::kEmbedderType);
+}
+
+void BaseObject::SetInternalFields(IsolateData* isolate_data,
+                                   v8::Local<v8::Object> object,
+                                   void* slot) {
+  TagBaseObject(isolate_data, object);
+  object->SetAlignedPointerInInternalField(
+      BaseObject::kSlot, slot, EmbedderDataTag::kDefault);
 }
 
 BaseObject* BaseObject::FromJSObject(v8::Local<v8::Value> value) {
   v8::Local<v8::Object> obj = value.As<v8::Object>();
-  DCHECK_GE(obj->InternalFieldCount(), BaseObject::kSlot);
-  return static_cast<BaseObject*>(
-      obj->GetAlignedPointerFromInternalField(BaseObject::kSlot));
+  DCHECK_GE(obj->InternalFieldCount(), BaseObject::kInternalFieldCount);
+  return static_cast<BaseObject*>(obj->GetAlignedPointerFromInternalField(
+      BaseObject::kSlot, EmbedderDataTag::kDefault));
 }
-
 
 template <typename T>
 T* BaseObject::FromJSObject(v8::Local<v8::Value> object) {
@@ -100,18 +130,18 @@ bool BaseObject::IsWeakOrDetached() const {
 
 template <int Field>
 void BaseObject::InternalFieldGet(
-    v8::Local<v8::String> property,
-    const v8::PropertyCallbackInfo<v8::Value>& info) {
-  info.GetReturnValue().Set(info.This()->GetInternalField(Field));
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  args.GetReturnValue().Set(
+      args.This()->GetInternalField(Field).As<v8::Value>());
 }
 
-template <int Field, bool (v8::Value::* typecheck)() const>
-void BaseObject::InternalFieldSet(v8::Local<v8::String> property,
-                                  v8::Local<v8::Value> value,
-                                  const v8::PropertyCallbackInfo<void>& info) {
+template <int Field, bool (v8::Value::*typecheck)() const>
+void BaseObject::InternalFieldSet(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  v8::Local<v8::Value> value = args[0];
   // This could be e.g. value->IsFunction().
   CHECK(((*value)->*typecheck)());
-  info.This()->SetInternalField(Field, value);
+  args.This()->SetInternalField(Field, value);
 }
 
 bool BaseObject::has_pointer_data() const {
@@ -219,6 +249,17 @@ BaseObjectPtrImpl<T, kIsWeak>& BaseObjectPtrImpl<T, kIsWeak>::operator=(
 }
 
 template <typename T, bool kIsWeak>
+BaseObjectPtrImpl<T, kIsWeak>::BaseObjectPtrImpl(std::nullptr_t)
+    : BaseObjectPtrImpl() {}
+
+template <typename T, bool kIsWeak>
+BaseObjectPtrImpl<T, kIsWeak>& BaseObjectPtrImpl<T, kIsWeak>::operator=(
+    std::nullptr_t) {
+  this->~BaseObjectPtrImpl();
+  return *new (this) BaseObjectPtrImpl();
+}
+
+template <typename T, bool kIsWeak>
 void BaseObjectPtrImpl<T, kIsWeak>::reset(T* ptr) {
   *this = BaseObjectPtrImpl(ptr);
 }
@@ -257,9 +298,25 @@ bool BaseObjectPtrImpl<T, kIsWeak>::operator !=(
   return get() != other.get();
 }
 
+template <typename T, bool kIsWeak>
+bool operator==(const BaseObjectPtrImpl<T, kIsWeak> ptr, const std::nullptr_t) {
+  return ptr.get() == nullptr;
+}
+
+template <typename T, bool kIsWeak>
+bool operator==(const std::nullptr_t, const BaseObjectPtrImpl<T, kIsWeak> ptr) {
+  return ptr.get() == nullptr;
+}
+
 template <typename T, typename... Args>
 BaseObjectPtr<T> MakeBaseObject(Args&&... args) {
   return BaseObjectPtr<T>(new T(std::forward<Args>(args)...));
+}
+template <typename T, typename... Args>
+BaseObjectWeakPtr<T> MakeWeakBaseObject(Args&&... args) {
+  T* target = new T(std::forward<Args>(args)...);
+  target->MakeWeak();
+  return BaseObjectWeakPtr<T>(target);
 }
 
 template <typename T, typename... Args>

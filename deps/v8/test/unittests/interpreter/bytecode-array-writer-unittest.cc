@@ -2,20 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "src/init/v8.h"
+#include "src/interpreter/bytecode-array-writer.h"
 
 #include "src/api/api.h"
 #include "src/codegen/source-position-table.h"
 #include "src/execution/isolate.h"
 #include "src/heap/factory.h"
-#include "src/interpreter/bytecode-array-writer.h"
+#include "src/init/v8.h"
 #include "src/interpreter/bytecode-label.h"
 #include "src/interpreter/bytecode-node.h"
 #include "src/interpreter/bytecode-register.h"
 #include "src/interpreter/bytecode-source-info.h"
 #include "src/interpreter/constant-array-builder.h"
-#include "src/utils/utils.h"
+#include "src/interpreter/handler-table-builder.h"
 #include "src/objects/objects-inl.h"
+#include "src/utils/utils.h"
 #include "test/unittests/interpreter/bytecode-utils.h"
 #include "test/unittests/test-utils.h"
 
@@ -49,13 +50,20 @@ class BytecodeArrayWriterUnittest : public TestWithIsolateAndZone {
 
   void WriteJump(Bytecode bytecode, BytecodeLabel* label,
                  BytecodeSourceInfo info = BytecodeSourceInfo());
+  void WriteJump(Bytecode bytecode, BytecodeLabel* label, uint32_t operand1,
+                 uint32_t operand2,
+                 BytecodeSourceInfo info = BytecodeSourceInfo());
   void WriteJumpLoop(Bytecode bytecode, BytecodeLoopHeader* loop_header,
-                     int depth, BytecodeSourceInfo info = BytecodeSourceInfo());
+                     int depth, int feedback_index,
+                     BytecodeSourceInfo info = BytecodeSourceInfo());
 
   BytecodeArrayWriter* writer() { return &bytecode_array_writer_; }
   ZoneVector<unsigned char>* bytecodes() { return writer()->bytecodes(); }
   SourcePositionTableBuilder* source_position_table_builder() {
     return writer()->source_position_table_builder();
+  }
+  ConstantArrayBuilder* constant_array_builder() {
+    return &constant_array_builder_;
   }
 
  private:
@@ -104,11 +112,20 @@ void BytecodeArrayWriterUnittest::WriteJump(Bytecode bytecode,
   writer()->WriteJump(&node, label);
 }
 
+void BytecodeArrayWriterUnittest::WriteJump(Bytecode bytecode,
+                                            BytecodeLabel* label,
+                                            uint32_t operand1,
+                                            uint32_t operand2,
+                                            BytecodeSourceInfo info) {
+  BytecodeNode node(bytecode, 0, operand1, operand2, info);
+  writer()->WriteJump(&node, label);
+}
+
 void BytecodeArrayWriterUnittest::WriteJumpLoop(Bytecode bytecode,
                                                 BytecodeLoopHeader* loop_header,
-                                                int depth,
+                                                int depth, int feedback_index,
                                                 BytecodeSourceInfo info) {
-  BytecodeNode node(bytecode, 0, depth, info);
+  BytecodeNode node(bytecode, 0, depth, feedback_index, info);
   writer()->WriteJumpLoop(&node, loop_header);
 }
 
@@ -140,8 +157,9 @@ TEST_F(BytecodeArrayWriterUnittest, SimpleExample) {
     CHECK_EQ(bytecodes()->at(i), expected_bytes[i]);
   }
 
-  Handle<BytecodeArray> bytecode_array =
-      writer()->ToBytecodeArray(isolate(), 0, 0, factory()->empty_byte_array());
+  DirectHandle<BytecodeArray> bytecode_array =
+      writer()->ToBytecodeArray(isolate(), 201, kJSArgcReceiverSlots, 0,
+                                factory()->empty_trusted_byte_array());
   bytecode_array->set_source_position_table(
       *writer()->ToSourcePositionTable(isolate()), kReleaseStore);
   CHECK_EQ(bytecodes()->size(), arraysize(expected_bytes));
@@ -165,14 +183,13 @@ TEST_F(BytecodeArrayWriterUnittest, ComplexExample) {
       // clang-format off
       /*  0 42 S> */ B(LdaConstant), U8(0),
       /*  2 42 E> */ B(Add), R8(1), U8(1),
-      /*  4 68 S> */ B(JumpIfUndefined), U8(38),
-      /*  6       */ B(JumpIfNull), U8(36),
+      /*  4 68 S> */ B(JumpIfUndefined), U8(36),
+      /*  6       */ B(JumpIfNull), U8(34),
       /*  8       */ B(ToObject), R8(3),
       /* 10       */ B(ForInPrepare), R8(3), U8(4),
       /* 13       */ B(LdaZero),
       /* 14       */ B(Star), R8(7),
-      /* 16 63 S> */ B(ForInContinue), R8(7), R8(6),
-      /* 19       */ B(JumpIfFalse), U8(23),
+      /* 16 63 S> */ B(JumpIfForInDone), U8(24), R8(7), R8(6),
       /* 21       */ B(ForInNext), R8(3), R8(7), R8(4), U8(1),
       /* 26       */ B(JumpIfUndefined), U8(9),
       /* 28       */ B(Star), R8(0),
@@ -180,19 +197,20 @@ TEST_F(BytecodeArrayWriterUnittest, ComplexExample) {
       /* 32       */ B(Star), R8(2),
       /* 34 85 S> */ B(Return),
       /* 35       */ B(ForInStep), R8(7),
-      /* 37       */ B(Star), R8(7),
-      /* 39       */ B(JumpLoop), U8(23), U8(0),
-      /* 42       */ B(LdaUndefined),
-      /* 43 85 S> */ B(Return),
+      /* 39       */ B(JumpLoop), U8(20), U8(0), U8(0),
+      /* 43       */ B(LdaUndefined),
+      /* 44 85 S> */ B(Return),
       // clang-format on
   };
 
   static const PositionTableEntry expected_positions[] = {
       {0, 42, true},  {2, 42, false}, {5, 68, true},
-      {17, 63, true}, {35, 85, true}, {44, 85, true}};
+      {17, 63, true}, {34, 85, true}, {42, 85, true}};
 
   BytecodeLoopHeader loop_header;
   BytecodeLabel jump_for_in, jump_end_1, jump_end_2, jump_end_3;
+
+  constant_array_builder()->Insert(Smi::zero());
 
   Write(Bytecode::kLdaConstant, U8(0), {42, true});
   Write(Bytecode::kAdd, R(1), U8(1), {42, false});
@@ -203,8 +221,7 @@ TEST_F(BytecodeArrayWriterUnittest, ComplexExample) {
   Write(Bytecode::kLdaZero);
   Write(Bytecode::kStar, R(7));
   writer()->BindLoopHeader(&loop_header);
-  Write(Bytecode::kForInContinue, R(7), R(6), {63, true});
-  WriteJump(Bytecode::kJumpIfFalse, &jump_end_3);
+  WriteJump(Bytecode::kJumpIfForInDone, &jump_end_3, R(7), R(6), {63, true});
   Write(Bytecode::kForInNext, R(3), R(7), R(4), U8(1));
   WriteJump(Bytecode::kJumpIfUndefined, &jump_for_in);
   Write(Bytecode::kStar, R(0));
@@ -213,8 +230,7 @@ TEST_F(BytecodeArrayWriterUnittest, ComplexExample) {
   Write(Bytecode::kReturn, {85, true});
   writer()->BindLabel(&jump_for_in);
   Write(Bytecode::kForInStep, R(7));
-  Write(Bytecode::kStar, R(7));
-  WriteJumpLoop(Bytecode::kJumpLoop, &loop_header, 0);
+  WriteJumpLoop(Bytecode::kJumpLoop, &loop_header, 0, 0);
   writer()->BindLabel(&jump_end_1);
   writer()->BindLabel(&jump_end_2);
   writer()->BindLabel(&jump_end_3);
@@ -227,8 +243,9 @@ TEST_F(BytecodeArrayWriterUnittest, ComplexExample) {
              static_cast<int>(expected_bytes[i]));
   }
 
-  Handle<BytecodeArray> bytecode_array =
-      writer()->ToBytecodeArray(isolate(), 0, 0, factory()->empty_byte_array());
+  DirectHandle<BytecodeArray> bytecode_array =
+      writer()->ToBytecodeArray(isolate(), 8, kJSArgcReceiverSlots, 0,
+                                factory()->empty_trusted_byte_array());
   bytecode_array->set_source_position_table(
       *writer()->ToSourcePositionTable(isolate()), kReleaseStore);
   SourcePositionTableIterator source_iterator(
@@ -245,7 +262,7 @@ TEST_F(BytecodeArrayWriterUnittest, ComplexExample) {
 }
 
 TEST_F(BytecodeArrayWriterUnittest, ElideNoneffectfulBytecodes) {
-  if (!i::FLAG_ignition_elide_noneffectful_bytecodes) return;
+  if (!i::v8_flags.ignition_elide_noneffectful_bytecodes) return;
 
   static const uint8_t expected_bytes[] = {
       // clang-format off
@@ -276,8 +293,9 @@ TEST_F(BytecodeArrayWriterUnittest, ElideNoneffectfulBytecodes) {
              static_cast<int>(expected_bytes[i]));
   }
 
-  Handle<BytecodeArray> bytecode_array =
-      writer()->ToBytecodeArray(isolate(), 0, 0, factory()->empty_byte_array());
+  DirectHandle<BytecodeArray> bytecode_array =
+      writer()->ToBytecodeArray(isolate(), 21, kJSArgcReceiverSlots, 0,
+                                factory()->empty_trusted_byte_array());
   bytecode_array->set_source_position_table(
       *writer()->ToSourcePositionTable(isolate()), kReleaseStore);
   SourcePositionTableIterator source_iterator(
@@ -344,8 +362,9 @@ TEST_F(BytecodeArrayWriterUnittest, DeadcodeElimination) {
              static_cast<int>(expected_bytes[i]));
   }
 
-  Handle<BytecodeArray> bytecode_array =
-      writer()->ToBytecodeArray(isolate(), 0, 0, factory()->empty_byte_array());
+  DirectHandle<BytecodeArray> bytecode_array =
+      writer()->ToBytecodeArray(isolate(), 0, kJSArgcReceiverSlots, 0,
+                                factory()->empty_trusted_byte_array());
   bytecode_array->set_source_position_table(
       *writer()->ToSourcePositionTable(isolate()), kReleaseStore);
   SourcePositionTableIterator source_iterator(
@@ -359,6 +378,25 @@ TEST_F(BytecodeArrayWriterUnittest, DeadcodeElimination) {
     source_iterator.Advance();
   }
   CHECK(source_iterator.done());
+}
+
+TEST_F(BytecodeArrayWriterUnittest, HandlerTableBuilderOverflowCheck) {
+  HandlerTableBuilder builder(zone());
+  int handler_id = builder.NewHandlerEntry();
+  builder.SetTryRegionStart(handler_id, 0);
+  builder.SetTryRegionEnd(handler_id, 10);
+  builder.SetHandlerTarget(handler_id,
+                           static_cast<size_t>(HandlerTable::kLazyDeopt));
+  DirectHandle<TrustedByteArray> table = builder.ToHandlerTable(isolate());
+  CHECK_GT(table->length().value(), 0u);
+
+  HandlerTableBuilder invalid_builder(zone());
+  int invalid_handler_id = invalid_builder.NewHandlerEntry();
+  invalid_builder.SetTryRegionStart(invalid_handler_id, 0);
+  invalid_builder.SetTryRegionEnd(invalid_handler_id, 10);
+  invalid_builder.SetHandlerTarget(
+      invalid_handler_id, static_cast<size_t>(HandlerTable::kLazyDeopt) + 1);
+  ASSERT_DEATH_IF_SUPPORTED(invalid_builder.ToHandlerTable(isolate()), "");
 }
 
 #undef B

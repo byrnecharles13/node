@@ -1,36 +1,44 @@
-import { Socket } from "net";
-import { URL } from "url";
-import { connector } from "./connector";
-import { HttpMethod } from "./dispatcher";
+import { Socket } from 'node:net'
+import { URL } from 'node:url'
+import buildConnector from './connector'
+import Dispatcher from './dispatcher'
+import { IncomingHttpHeaders } from './header'
 
 declare namespace DiagnosticsChannel {
   interface Request {
     origin?: string | URL;
     completed: boolean;
-    method?: HttpMethod;
+    method?: Dispatcher.HttpMethod;
     path: string;
-    headers: string;
-    addHeader(key: string, value: string): Request;
+    headers: any;
   }
   interface Response {
     statusCode: number;
     statusText: string;
-    headers: Array<Buffer>;
+    headers: Array<Buffer> | IncomingHttpHeaders;
   }
-  type Error = unknown;
   interface ConnectParams {
-    host: URL["host"];
-    hostname: URL["hostname"];
-    protocol: URL["protocol"];
-    port: URL["port"];
+    host: URL['host'];
+    hostname: URL['hostname'];
+    protocol: URL['protocol'];
+    port: URL['port'];
     servername: string | null;
   }
-  type Connector = typeof connector;
+  type Connector = buildConnector.connector
   export interface RequestCreateMessage {
     request: Request;
   }
   export interface RequestBodySentMessage {
     request: Request;
+  }
+
+  export interface RequestBodyChunkSentMessage {
+    request: Request;
+    chunk: Uint8Array | string;
+  }
+  export interface RequestBodyChunkReceivedMessage {
+    request: Request;
+    chunk: Buffer;
   }
   export interface RequestHeadersMessage {
     request: Request;
